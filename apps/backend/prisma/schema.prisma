@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id               String             @id @default(uuid())
+  username         String             @unique
+  password         String
+  full_name        String
+  telegram_id      String?
+  zalo_id          String?
+  role             Role               @default(STAFF)
+  status           Status             @default(ACTIVE)
+  created_at       DateTime           @default(now())
+  shift_assignments ShiftAssignment[]
+  attendance_logs  AttendanceLog[]
+  notifications    Notification[]
+  audit_logs       AuditLog[]
+
+  @@map("users")
+}
+
+model Shift {
+  id               String             @id @default(uuid())
+  name             String
+  start_time       String             // e.g. "08:00"
+  end_time         String             // e.g. "17:00"
+  grace_minutes    Int                @default(5)
+  created_at       DateTime           @default(now())
+  assignments      ShiftAssignment[]
+
+  @@map("shifts")
+}
+
+model ShiftAssignment {
+  id               String             @id @default(uuid())
+  user_id          String
+  shift_id         String
+  work_date        DateTime           @db.Date
+  status           String             @default("SCHEDULED")
+  user             User               @relation(fields: [user_id], references: [id])
+  shift            Shift              @relation(fields: [shift_id], references: [id])
+  attendance_logs  AttendanceLog[]
+
+  @@map("shift_assignments")
+}
+
+model AttendanceLog {
+  id                  String           @id @default(uuid())
+  user_id             String
+  shift_assignment_id String
+  confirm_at          DateTime?
+  checkin_at          DateTime?
+  late_minutes        Int              @default(0)
+  status              String           @default("PENDING") // PENDING, CONFIRMED, CHECKED_IN, LATE, ABSENT
+  user                User             @relation(fields: [user_id], references: [id])
+  shift_assignment    ShiftAssignment  @relation(fields: [shift_assignment_id], references: [id])
+  escalation_logs     EscalationLog[]
+
+  @@map("attendance_logs")
+}
+
+model Notification {
+  id               String             @id @default(uuid())
+  user_id          String
+  channel          String             // TELEGRAM, ZALO, SYSTEM
+  type             String             // REMINDER, ESCALATION, WARNING
+  payload          Json               // JSONB data
+  status           String             @default("PENDING") // PENDING, SENT, FAILED
+  sent_at          DateTime?
+  read_at          DateTime?
+  user             User               @relation(fields: [user_id], references: [id])
+
+  @@map("notifications")
+}
+
+model EscalationLog {
+  id               String             @id @default(uuid())
+  attendance_id    String
+  level            Int                @default(1)
+  triggered_at     DateTime           @default(now())
+  resolved_at      DateTime?
+  attendance       AttendanceLog      @relation(fields: [attendance_id], references: [id])
+
+  @@map("escalation_logs")
+}
+
+model AuditLog {
+  id               String             @id @default(uuid())
+  actor_id         String?
+  action           String
+  entity_type      String
+  entity_id        String
+  metadata         Json?
+  created_at       DateTime           @default(now())
+  actor            User?              @relation(fields: [actor_id], references: [id])
+
+  @@map("audit_logs")
+}
