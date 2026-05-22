@@ -201,3 +201,210 @@
 .react-datepicker-popper {
   z-index: 50 !important;
 }
+
+/* ==========================================
+   LIGHT MODE OVERRIDES FOR HARDCODED DARK CLASSES
+   ========================================== */
+html:not(.dark) {
+  /* Base body and background overrides */
+  body, 
+  .bg-slate-950 {
+    background-color: #f8fafc !important; /* slate-50 */
+    color: #0f172a !important; /* slate-900 */
+  }
+
+  /* Main Card and surface background overrides */
+  .bg-slate-900,
+  .bg-slate-900\/50,
+  .bg-slate-900\/60,
+  .bg-slate-900\/80,
+  .bg-slate-900\/95,
+  [class*="bg-slate-900"] {
+    background-color: #ffffff !important; /* white */
+    color: #0f172a !important;
+  }
+
+  /* Inner surfaces, inputs and row hover overrides */
+  .bg-slate-950\/40,
+  .bg-slate-800,
+  .bg-slate-800\/50,
+  .bg-slate-800\/30,
+  .bg-slate-800\/40,
+  .hover\:bg-slate-800\/30:hover,
+  .hover\:bg-slate-800\/50:hover,
+  [class*="bg-slate-800"],
+  [class*="hover:bg-slate-800"]:hover {
+    background-color: #f1f5f9 !important; /* slate-100 */
+    color: #0f172a !important;
+  }
+
+  /* Borders */
+  .border-slate-800,
+  .border-slate-700,
+  .border-slate-850,
+  .border-slate-800\/50,
+  .border-slate-800\/20,
+  .border-slate-700\/50,
+  [class*="border-slate-800"],
+  [class*="border-slate-700"] {
+    border-color: #cbd5e1 !important; /* slate-300 */
+  }
+
+  /* Texts */
+  .text-slate-50,
+  .text-slate-100,
+  .text-slate-200,
+  .text-slate-300,
+  [class*="text-slate-300"],
+  [class*="text-slate-200"],
+  [class*="text-slate-100"] {
+    color: #0f172a !important; /* slate-900 */
+  }
+
+  .text-slate-400 {
+    color: #475569 !important; /* slate-600 */
+  }
+
+  .text-slate-500,
+  .text-slate-550,
+  .text-slate-600 {
+    color: #64748b !important; /* slate-500 */
+  }
+
+  /* Hover overrides for texts to avoid white/light text on light backgrounds */
+  .hover\:text-white:hover,
+  .hover\:text-slate-100:hover,
+  .hover\:text-slate-200:hover,
+  .hover\:text-slate-300:hover {
+    color: #0f172a !important;
+  }
+
+  /* Cyber Slates hovers and active states */
+  .hover\:text-cyan-400:hover,
+  .text-cyan-400,
+  .text-cyan-300 {
+    color: #0891b2 !important; /* cyan-600 */
+  }
+
+  .bg-cyan-900\/40 {
+    background-color: #cffafe !important; /* cyan-100 */
+    color: #0891b2 !important;
+  }
+
+  .border-cyan-800\/50,
+  .border-cyan-400 {
+    border-color: #0891b2 !important;
+  }
+
+  .bg-cyan-400\/10 {
+    background-color: rgba(8, 145, 178, 0.1) !important;
+  }
+
+  /* Inputs, standard inputs */
+  input, 
+  select, 
+  textarea,
+  .bg-slate-950\/40 input {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+
+  /* React Datepicker overrides for Light Mode */
+  .react-datepicker {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+
+  .react-datepicker__header {
+    background-color: #f8fafc !important;
+    border-bottom-color: #cbd5e1 !important;
+  }
+
+  .react-datepicker__current-month,
+  .react-datepicker__day-name,
+  .react-datepicker-time__header {
+    color: #0f172a !important;
+  }
+
+  .react-datepicker__day {
+    color: #334155 !important;
+  }
+
+  .react-datepicker__day:hover {
+    background-color: #f1f5f9 !important;
+  }
+
+  .react-datepicker__day--selected,
+  .react-datepicker__day--keyboard-selected {
+    background-color: #0891b2 !important;
+    color: #ffffff !important;
+  }
+
+  .react-datepicker__time-container {
+    border-left-color: #cbd5e1 !important;
+  }
+
+  .react-datepicker__time {
+    background-color: #ffffff !important;
+  }
+
+  .react-datepicker__time-list-item {
+    color: #334155 !important;
+  }
+
+  .react-datepicker__time-list-item:hover {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+
+  /* React Select overrides for Light Mode */
+  div[class*="-control"] {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+  
+  div[class*="-singleValue"] {
+    color: #0f172a !important;
+  }
+  
+  div[class*="-placeholder"] {
+    color: #64748b !important;
+  }
+  
+  div[class*="-menu"] {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+  }
+  
+  div[class*="-option"] {
+    color: #334155 !important;
+    background-color: transparent !important;
+  }
+  
+  div[class*="-option"]:hover, 
+  div[class*="-option"][class*="-is-focused"] {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+  
+  div[class*="-option"][class*="-is-selected"] {
+    background-color: #0891b2 !important;
+    color: #ffffff !important;
+  }
+
+  /* Navigation specific overrides */
+  nav {
+    border-color: #e2e8f0 !important;
+    background-color: rgba(255, 255, 255, 0.8) !important;
+  }
+  
+  /* Modal dialog container */
+  div[role="dialog"] {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+}

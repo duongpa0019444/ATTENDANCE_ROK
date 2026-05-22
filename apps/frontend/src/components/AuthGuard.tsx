@@ -1,7 +1,7 @@
 'use client';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Sun, Moon } from 'lucide-react';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -9,6 +9,30 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
+    if (savedTheme) {
+      setTheme(savedTheme);
+      if (savedTheme === 'light') {
+        document.documentElement.classList.remove('dark');
+      } else {
+        document.documentElement.classList.add('dark');
+      }
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('theme', nextTheme);
+    if (nextTheme === 'light') {
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.classList.add('dark');
+    }
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -101,6 +125,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
         {/* Desktop actions */}
         <div className="hidden md:flex items-center gap-4">
+          <button
+            onClick={toggleTheme}
+            className="p-1.5 text-slate-400 hover:text-white border border-slate-800 bg-slate-950/40 hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer"
+            title={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-cyan-400" />}
+          </button>
           <span className="text-xs text-slate-400 font-mono uppercase tracking-wider bg-slate-800/50 border border-slate-700/50 px-2.5 py-1 rounded">
             🟢 {getAdminName()}
           </span>
@@ -113,7 +144,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Mobile menu button */}
-        <div className="flex md:hidden">
+        <div className="flex md:hidden items-center gap-2">
+          <button
+            onClick={toggleTheme}
+            className="p-1.5 text-slate-400 hover:text-white border border-slate-800 bg-slate-950/40 hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer"
+            title={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-cyan-400" />}
+          </button>
           <button
             onClick={() => setIsMobileMenuOpen(true)}
             className="text-slate-400 hover:text-white focus:outline-none p-1.5 rounded-lg border border-slate-800 bg-slate-950/40"
