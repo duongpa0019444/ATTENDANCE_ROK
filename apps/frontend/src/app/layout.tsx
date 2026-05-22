@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Outfit, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import AuthGuard from "@/components/AuthGuard";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const outfit = Outfit({
+  variable: "--font-sans",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
 });
 
@@ -26,19 +27,16 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${outfit.variable} ${jetbrainsMono.variable} h-full antialiased dark font-sans`}
     >
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-slate-950">
-        <nav className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-6 py-4 flex gap-6 items-center sticky top-0 z-50">
-          <a href="/" className="text-cyan-400 font-bold tracking-wider hover:text-cyan-300 mr-4">CYBER_APP</a>
-          <a href="/" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Dashboard</a>
-          <a href="/users" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Nhân Sự</a>
-          <a href="/shifts" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Phân Ca</a>
-        </nav>
-        <main className="flex-1">
-          {children}
-        </main>
+        <AuthGuard>
+          <main className="flex-1">
+            {children}
+          </main>
+        </AuthGuard>
       </body>
     </html>
   );
 }
+

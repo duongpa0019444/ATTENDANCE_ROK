@@ -11,6 +11,7 @@ import { QueueModule } from './queue/queue.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { UsersModule } from './users/users.module';
 import { ShiftsModule } from './shifts/shifts.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ShiftsModule } from './shifts/shifts.module';
     SchedulerModule,
     UsersModule,
     ShiftsModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

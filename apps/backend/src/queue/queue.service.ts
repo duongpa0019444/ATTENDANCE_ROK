@@ -10,7 +10,14 @@ export class QueueService {
   ) {}
 
   async addNotificationJob(data: any, delay: number = 0) {
-    await this.notificationQueue.add('send-notification', data, { delay });
+    await this.notificationQueue.add('send-notification', data, {
+      delay,
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 5000,
+      },
+    });
   }
 
   async addEscalationJob(data: any, delay: number = 0) {

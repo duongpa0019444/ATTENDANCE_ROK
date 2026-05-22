@@ -1,27 +1,33 @@
 import { create } from 'zustand';
 
-interface Staff {
-  id: string;
+export type AttendanceStatus =
+  | 'PENDING'
+  | 'READY'
+  | 'LATE_REQUESTED'
+  | 'ABSENT_REQUESTED'
+  | 'CHECKED_IN'
+  | 'LATE'
+  | 'ABSENT';
+
+export interface Staff {
+  id: string; // shift assignment ID
+  userId: string;
   name: string;
   shift: string;
-  status: 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'LATE';
+  status: AttendanceStatus;
+  lateMinutes?: number;
 }
 
 interface AttendanceState {
   staffList: Staff[];
-  updateStaffStatus: (id: string, status: Staff['status']) => void;
+  updateStaffStatus: (userId: string, status: AttendanceStatus, extra?: Partial<Staff>) => void;
   setStaffList: (list: Staff[]) => void;
 }
 
 export const useAttendanceStore = create<AttendanceState>((set) => ({
-  staffList: [
-    { id: '1', name: 'Nguyen Van A (Faker)', shift: '08:00 - 17:00', status: 'PENDING' },
-    { id: '2', name: 'Tran B (Chovy)', shift: '08:00 - 17:00', status: 'CONFIRMED' },
-    { id: '3', name: 'Le C (Showmaker)', shift: '08:00 - 17:00', status: 'LATE' },
-    { id: '4', name: 'Pham D (Canyon)', shift: '08:00 - 17:00', status: 'CHECKED_IN' },
-  ],
-  updateStaffStatus: (id, status) => set((state) => ({
-    staffList: state.staffList.map(s => s.id === id ? { ...s, status } : s)
+  staffList: [],
+  updateStaffStatus: (userId, status, extra = {}) => set((state) => ({
+    staffList: state.staffList.map(s => s.userId === userId ? { ...s, status, ...extra } : s)
   })),
   setStaffList: (list) => set({ staffList: list }),
 }));

@@ -19,21 +19,34 @@ enum Status {
 }
 
 model User {
-  id               String             @id @default(uuid())
-  username         String             @unique
-  password         String
-  full_name        String
-  telegram_id      String?
-  zalo_id          String?
-  role             Role               @default(STAFF)
-  status           Status             @default(ACTIVE)
-  created_at       DateTime           @default(now())
-  shift_assignments ShiftAssignment[]
-  attendance_logs  AttendanceLog[]
-  notifications    Notification[]
-  audit_logs       AuditLog[]
+  id                 String             @id @default(uuid())
+  username           String             @unique
+  password           String
+  full_name          String
+  telegram_id        String?            @unique
+  telegram_username  String?
+  telegram_linked_at DateTime?
+  zalo_id            String?
+  role               Role               @default(STAFF)
+  status             Status             @default(ACTIVE)
+  created_at         DateTime           @default(now())
+  shift_assignments  ShiftAssignment[]
+  attendance_logs    AttendanceLog[]
+  notifications      Notification[]
+  audit_logs         AuditLog[]
 
   @@map("users")
+}
+
+model TelegramLinkToken {
+  id         String   @id @default(uuid())
+  username   String
+  token      String   @unique
+  used       Boolean  @default(false)
+  created_at DateTime @default(now())
+  expired_at DateTime
+
+  @@map("telegram_link_tokens")
 }
 
 model Shift {
@@ -113,3 +126,11 @@ model AuditLog {
 
   @@map("audit_logs")
 }
+
+model Setting {
+  key   String @id
+  value String
+
+  @@map("settings")
+}
+
