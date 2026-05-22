@@ -174,12 +174,13 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
-  async sendReminder(chatId: string, shiftName: string, assignmentId: string, minutesLeft: number) {
+  async sendReminder(chatId: string, shiftName: string, assignmentId: string, minutesLeft: number, dateStr?: string) {
     if (!this.bot) return;
     try {
+      const dateText = dateStr ? ` ngày ${dateStr}` : '';
       await this.bot.telegram.sendMessage(
         chatId,
-        `🔔 Nhắc nhở: Còn ${minutesLeft} phút nữa là tới ca làm [${shiftName}]. Vui lòng chuẩn bị!`,
+        `🔔 Nhắc nhở: Còn ${minutesLeft} phút nữa là tới ca làm [${shiftName}]${dateText}. Vui lòng chuẩn bị!`,
         Markup.inlineKeyboard([
           Markup.button.callback('✅ Xác nhận chuẩn bị', `confirm_shift_${assignmentId}`),
           Markup.button.callback('⚠️ Xin đi trễ', `late_shift_${assignmentId}`),
@@ -190,13 +191,14 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
-  async sendT10Reminder(chatId: string, shiftName: string, startTime: string, endTime: string, assignmentId: string, minutesLeft?: number) {
+  async sendT10Reminder(chatId: string, shiftName: string, startTime: string, endTime: string, assignmentId: string, minutesLeft?: number, dateStr?: string) {
     if (!this.bot) return;
     try {
       const minText = minutesLeft ? ` (Còn ${minutesLeft} phút)` : '';
+      const dateText = dateStr ? `Ngày: ${dateStr}\n` : '';
       await this.bot.telegram.sendMessage(
         chatId,
-        `🔔 Sắp tới ca làm${minText}\n\nCa: ${shiftName}\nThời gian: ${startTime} - ${endTime}\n\nVui lòng xác nhận bạn đã sẵn sàng.\n*(Bạn cũng có thể gửi vị trí trực tiếp để check-in sớm)*`,
+        `🔔 Sắp tới ca làm${minText}\n\nCa: ${shiftName}\n${dateText}Thời gian: ${startTime} - ${endTime}\n\nVui lòng xác nhận bạn đã sẵn sàng.\n*(Bạn cũng có thể gửi vị trí trực tiếp để check-in sớm)*`,
         {
           parse_mode: 'Markdown',
           reply_markup: Markup.inlineKeyboard([
@@ -209,12 +211,13 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
-  async sendT5Warning(chatId: string, startTime: string, assignmentId: string) {
+  async sendT5Warning(chatId: string, startTime: string, assignmentId: string, dateStr?: string) {
     if (!this.bot) return;
     try {
+      const dateText = dateStr ? ` ngày ${dateStr}` : '';
       await this.bot.telegram.sendMessage(
         chatId,
-        `⚠️ Bạn chưa xác nhận ca làm.\n\nCa bắt đầu lúc ${startTime}.\nCòn 5 phút.`,
+        `⚠️ Bạn chưa xác nhận ca làm.\n\nCa bắt đầu lúc ${startTime}${dateText}.\nCòn 5 phút.`,
         Markup.inlineKeyboard([
           [Markup.button.callback('✅ Tôi đã sẵn sàng', `ready_shift_${assignmentId}`)]
         ])
@@ -239,12 +242,13 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
-  async sendLateT5Alert(chatId: string, staffName: string, startTime: string, assignmentId: string, lateMinutes: number = 5) {
+  async sendLateT5Alert(chatId: string, staffName: string, startTime: string, assignmentId: string, lateMinutes: number = 5, dateStr?: string) {
     if (!this.bot) return;
     try {
+      const dateText = dateStr ? ` ngày ${dateStr}` : '';
       await this.bot.telegram.sendMessage(
         chatId,
-        `⚠️ Nhân sự đi trễ\n\nTên: ${staffName}\nCa: ${startTime}\nTrễ: ${lateMinutes} phút`,
+        `⚠️ Nhân sự đi trễ\n\nTên: ${staffName}\nCa: ${startTime}${dateText}\nTrễ: ${lateMinutes} phút`,
         Markup.inlineKeyboard([
           [Markup.button.callback('📞 Nhắc lại', `mgr_remind_${assignmentId}`)],
           [

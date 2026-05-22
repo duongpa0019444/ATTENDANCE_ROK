@@ -60,6 +60,11 @@ export class SchedulerService {
 
       // Compute exact shift start time in local server timezone
       const workDate = new Date(assignment.work_date);
+      const day = String(workDate.getUTCDate()).padStart(2, '0');
+      const month = String(workDate.getUTCMonth() + 1).padStart(2, '0');
+      const year = workDate.getUTCFullYear();
+      const dateStr = `${day}/${month}/${year}`;
+
       const [hours, minutes] = assignment.shift.start_time.split(':').map(Number);
       const shiftStart = new Date(
         workDate.getUTCFullYear(),
@@ -88,6 +93,7 @@ export class SchedulerService {
                 shiftName: assignment.shift.name,
                 startTime: assignment.shift.start_time,
                 endTime: assignment.shift.end_time,
+                dateStr,
                 assignmentId: assignment.id,
                 minutesLeft: diffMins,
               },
@@ -109,6 +115,7 @@ export class SchedulerService {
               chatId: assignment.user.telegram_id,
               data: {
                 startTime: assignment.shift.start_time,
+                dateStr,
                 assignmentId: assignment.id,
               },
             }
@@ -124,7 +131,7 @@ export class SchedulerService {
             });
 
             // Alert manager via Telegram
-            const alertMsg = `⚠️ CẢNH BÁO LEVEL 1: Nhân sự [${assignment.user.full_name}] chưa xác nhận ca làm [${assignment.shift.name}] (bắt đầu lúc ${assignment.shift.start_time}).`;
+            const alertMsg = `⚠️ CẢNH BÁO LEVEL 1: Nhân sự [${assignment.user.full_name}] chưa xác nhận ca làm [${assignment.shift.name}] ngày ${dateStr} (bắt đầu lúc ${assignment.shift.start_time}).`;
             await this.queueManagersNotification(alertMsg);
 
             // Realtime Socket warning event
@@ -178,7 +185,7 @@ export class SchedulerService {
               type: 'TEXT',
               chatId: assignment.user.telegram_id,
               data: {
-                message: `❌ Bạn đã bị ghi nhận đi trễ cho ca [${assignment.shift.name}].`,
+                message: `❌ Bạn đã bị ghi nhận đi trễ cho ca [${assignment.shift.name}] ngày ${dateStr}.`,
               },
             }
           );
@@ -218,7 +225,8 @@ export class SchedulerService {
                 assignment.user.full_name,
                 assignment.shift.start_time,
                 assignment.id,
-                lateMinutes
+                lateMinutes,
+                dateStr
               );
 
               // Realtime Socket late event
@@ -282,7 +290,7 @@ export class SchedulerService {
     }
   }
 
-  private async queueManagersLateAlert(staffName: string, startTime: string, assignmentId: string, lateMinutes: number) {
+  private async queueManagersLateAlert(staffName: string, startTime: string, assignmentId: string, lateMinutes: number, dateStr: string) {
     const managers = await this.prisma.user.findMany({
       where: {
         role: { in: ['ADMIN', 'MANAGER'] },
@@ -299,6 +307,7 @@ export class SchedulerService {
             startTime,
             assignmentId,
             lateMinutes,
+            dateStr,
           },
         });
       }

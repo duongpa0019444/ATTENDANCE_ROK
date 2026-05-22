@@ -32,22 +32,66 @@ const selectStyles = {
   control: (base: any, state: any) => ({
     ...base,
     backgroundColor: '#1e293b',
-    borderColor: '#334155',
+    borderColor: state.isFocused ? '#06b6d4' : '#334155',
     color: 'white',
     minHeight: '40px',
-    boxShadow: state.isFocused ? '0 0 0 1px #06b6d4' : 'none',
-    '&:hover': { borderColor: '#475569' }
+    height: '40px',
+    borderRadius: '10px',
+    fontSize: '14px',
+    boxShadow: state.isFocused ? '0 0 0 2px rgba(6, 182, 212, 0.5)' : 'none',
+    '&:hover': { borderColor: state.isFocused ? '#06b6d4' : '#475569' }
   }),
-  menu: (base: any) => ({ ...base, backgroundColor: '#1e293b', border: '1px solid #334155', zIndex: 50 }),
+  valueContainer: (base: any) => ({
+    ...base,
+    padding: '0 12px',
+    height: '38px',
+    display: 'flex',
+    alignItems: 'center'
+  }),
+  input: (base: any) => ({
+    ...base,
+    margin: '0',
+    padding: '0',
+    color: 'white'
+  }),
+  indicatorsContainer: (base: any) => ({
+    ...base,
+    height: '38px'
+  }),
+  dropdownIndicator: (base: any) => ({
+    ...base,
+    padding: '6px'
+  }),
+  clearIndicator: (base: any) => ({
+    ...base,
+    padding: '6px'
+  }),
+  menu: (base: any) => ({
+    ...base,
+    backgroundColor: '#1e293b',
+    border: '1px solid #334155',
+    borderRadius: '10px',
+    zIndex: 9999
+  }),
+  menuPortal: (base: any) => ({ ...base, zIndex: 9999 }),
   option: (base: any, state: any) => ({
     ...base,
     backgroundColor: state.isSelected ? '#0891b2' : state.isFocused ? '#334155' : 'transparent',
     color: 'white',
+    fontSize: '14px',
     '&:active': { backgroundColor: '#0e7490' }
   }),
-  singleValue: (base: any) => ({ ...base, color: 'white' }),
-  input: (base: any) => ({ ...base, color: 'white' }),
-  placeholder: (base: any) => ({ ...base, color: '#64748b' }),
+  singleValue: (base: any) => ({
+    ...base,
+    color: 'white',
+    lineHeight: '38px'
+  }),
+  placeholder: (base: any) => ({
+    ...base,
+    color: '#64748b',
+    fontSize: '14px',
+    lineHeight: '38px'
+  })
 };
 
 const WEEKDAYS = [
@@ -84,6 +128,12 @@ export default function ShiftsPage() {
   const [shifts, setShifts] = useState([]);
   const [users, setUsers] = useState([]);
   const [assignments, setAssignments] = useState([]);
+
+  const [menuPortalTarget, setMenuPortalTarget] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setMenuPortalTarget(document.body);
+  }, []);
 
   const [newShift, setNewShift] = useState({
     name: '',
@@ -309,7 +359,7 @@ export default function ShiftsPage() {
                     timeCaption="Giờ"
                     dateFormat="HH:mm"
                     timeFormat="HH:mm"
-                    className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                    className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -323,11 +373,11 @@ export default function ShiftsPage() {
                     timeCaption="Giờ"
                     dateFormat="HH:mm"
                     timeFormat="HH:mm"
-                    className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                    className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
                   />
                 </div>
               </div>
-              <Button onClick={handleCreateShift} className="bg-cyan-600 hover:bg-cyan-500 w-full">Thêm Ca</Button>
+              <Button onClick={handleCreateShift} className="bg-cyan-600 hover:bg-cyan-500 w-full h-10">Thêm Ca</Button>
             </CardContent>
           </Card>
 
@@ -377,6 +427,7 @@ export default function ShiftsPage() {
               placeholder="-- Chọn nhân viên --"
               value={userOptions.find((o: any) => o.value === newAssignment.user_id) || null}
               onChange={(val: any) => setNewAssignment({ ...newAssignment, user_id: val?.value })}
+              menuPortalTarget={menuPortalTarget}
             />
 
             <Select
@@ -386,6 +437,7 @@ export default function ShiftsPage() {
               placeholder="-- Chọn ca làm --"
               value={shiftOptions.find((o: any) => o.value === newAssignment.shift_id) || null}
               onChange={(val: any) => setNewAssignment({ ...newAssignment, shift_id: val?.value })}
+              menuPortalTarget={menuPortalTarget}
             />
 
             {/* Date Range Selector */}
@@ -397,7 +449,7 @@ export default function ShiftsPage() {
                   onChange={(date: Date | null) => setNewAssignment({ ...newAssignment, startDate: date })}
                   dateFormat="dd/MM/yyyy"
                   formatWeekDay={formatWeekDayLabel}
-                  className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 />
               </div>
               <div className="space-y-1.5 flex flex-col">
@@ -408,7 +460,7 @@ export default function ShiftsPage() {
                   dateFormat="dd/MM/yyyy"
                   minDate={newAssignment.startDate || undefined}
                   formatWeekDay={formatWeekDayLabel}
-                  className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 />
               </div>
             </div>
@@ -448,7 +500,7 @@ export default function ShiftsPage() {
               )}
             </div>
 
-            <Button onClick={handleAssignShift} className="bg-green-600 hover:bg-green-500 w-full">
+            <Button onClick={handleAssignShift} className="bg-green-600 hover:bg-green-500 w-full h-10">
               Phân Ca {selectedDates.length > 0 && `(${selectedDates.length} ngày)`}
             </Button>
           </CardContent>
@@ -510,7 +562,7 @@ export default function ShiftsPage() {
                   timeCaption="Giờ"
                   dateFormat="HH:mm"
                   timeFormat="HH:mm"
-                  className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 />
               </div>
               <div className="space-y-1.5">
@@ -524,11 +576,11 @@ export default function ShiftsPage() {
                   timeCaption="Giờ"
                   dateFormat="HH:mm"
                   timeFormat="HH:mm"
-                  className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 />
               </div>
             </div>
-            <Button onClick={handleUpdateShift} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white">Lưu thay đổi</Button>
+            <Button onClick={handleUpdateShift} className="w-full h-10 bg-cyan-600 hover:bg-cyan-500 text-white">Lưu thay đổi</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -548,6 +600,7 @@ export default function ShiftsPage() {
                 styles={selectStyles}
                 value={userOptions.find((o: any) => o.value === editingAssignment?.user_id) || null}
                 onChange={(selected: any) => setEditingAssignment({ ...editingAssignment, user_id: selected?.value })}
+                menuPortalTarget={menuPortalTarget}
               />
             </div>
             <div className="space-y-2">
@@ -558,6 +611,7 @@ export default function ShiftsPage() {
                 styles={selectStyles}
                 value={shiftOptions.find((o: any) => o.value === editingAssignment?.shift_id) || null}
                 onChange={(selected: any) => setEditingAssignment({ ...editingAssignment, shift_id: selected?.value })}
+                menuPortalTarget={menuPortalTarget}
               />
             </div>
             <div className="space-y-2 flex flex-col">
@@ -567,7 +621,7 @@ export default function ShiftsPage() {
                 onChange={(date: Date | null) => setEditingAssignment({ ...editingAssignment, work_date: date })}
                 dateFormat="dd/MM/yyyy"
                 formatWeekDay={formatWeekDayLabel}
-                className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                className="flex h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
               />
             </div>
             <div className="space-y-2">
@@ -584,9 +638,10 @@ export default function ShiftsPage() {
                   label: (editingAssignment?.status || 'SCHEDULED') === 'COMPLETED' ? 'Hoàn thành (COMPLETED)' : 'Đã lên lịch (SCHEDULED)'
                 }}
                 onChange={(selected: any) => setEditingAssignment({ ...editingAssignment, status: selected.value })}
+                menuPortalTarget={menuPortalTarget}
               />
             </div>
-            <Button onClick={handleUpdateAssignment} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white">Lưu thay đổi</Button>
+            <Button onClick={handleUpdateAssignment} className="w-full h-10 bg-cyan-600 hover:bg-cyan-500 text-white">Lưu thay đổi</Button>
           </div>
         </DialogContent>
       </Dialog>

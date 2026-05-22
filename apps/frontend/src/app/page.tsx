@@ -405,7 +405,7 @@ export default function AdminDashboard() {
                   <Button
                     type="submit"
                     disabled={isSavingSettings}
-                    className="w-full h-8 bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs flex items-center justify-center gap-1.5 rounded transition-all active:scale-[0.98]"
+                    className="w-full h-10 bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs flex items-center justify-center gap-1.5 rounded transition-all active:scale-[0.98]"
                   >
                     {isSavingSettings ? (
                       <>

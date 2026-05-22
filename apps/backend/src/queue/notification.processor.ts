@@ -23,14 +23,16 @@ export class NotificationProcessor extends WorkerHost {
           data.startTime,
           data.endTime,
           data.assignmentId,
-          data.minutesLeft
+          data.minutesLeft,
+          data.dateStr
         );
         break;
       case 'WARNING_T5':
         await this.telegramService.sendT5Warning(
           chatId,
           data.startTime,
-          data.assignmentId
+          data.assignmentId,
+          data.dateStr
         );
         break;
       case 'CHECKIN_T0':
@@ -44,7 +46,9 @@ export class NotificationProcessor extends WorkerHost {
           chatId,
           data.staffName,
           data.startTime,
-          data.assignmentId
+          data.assignmentId,
+          data.lateMinutes,
+          data.dateStr
         );
         break;
       case 'TEXT':
@@ -55,7 +59,7 @@ export class NotificationProcessor extends WorkerHost {
         if (job.data.message) {
           await this.telegramService.sendMessage(chatId, job.data.message);
         } else if (type === 'REMINDER') {
-          await this.telegramService.sendReminder(chatId, data.shiftName, data.assignmentId, data.minutesLeft || 10);
+          await this.telegramService.sendReminder(chatId, data.shiftName, data.assignmentId, data.minutesLeft || 10, data.dateStr);
         } else {
           this.logger.warn(`Unknown job type: ${type}`);
         }
