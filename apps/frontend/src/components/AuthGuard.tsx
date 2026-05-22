@@ -95,6 +95,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             <a href="/" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Dashboard</a>
             <a href="/users" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Nhân Sự</a>
             <a href="/shifts" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Phân Ca</a>
+            <a href="/guide" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Hướng Dẫn</a>
           </div>
         </div>
 
@@ -172,6 +173,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               className="text-sm font-medium text-slate-300 hover:text-cyan-400 hover:bg-slate-800/40 px-3 py-2.5 rounded-lg transition-all"
             >
               Phân Ca
+            </a>
+            <a 
+              href="/guide" 
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="text-sm font-medium text-slate-300 hover:text-cyan-400 hover:bg-slate-800/40 px-3 py-2.5 rounded-lg transition-all"
+            >
+              Hướng Dẫn
             </a>
           </div>
         </div>
