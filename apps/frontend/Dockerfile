@@ -1,16 +1,28 @@
-FROM node:20-alpine
+# ── Stage 1: Install dependencies ─────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
 
+# ── Stage 2: Build ─────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# ── Stage 3: Production runtime ────────────────────────────
+FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Install dependencies
-COPY package*.json ./
-RUN npm install
+ENV NODE_ENV=production
+ENV PORT=3000
 
-# Copy source
-COPY . .
-
-# Build application
-RUN npm run build
+COPY --from=deps    /app/node_modules ./node_modules
+COPY --from=builder /app/.next        ./.next
+COPY --from=builder /app/public       ./public
+COPY --from=builder /app/package.json ./package.json
 
 EXPOSE 3000
 
