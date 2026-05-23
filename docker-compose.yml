@@ -50,6 +50,9 @@ services:
     build:
       context: ./apps/frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=https://attendance.shinigami.io.vn/api
+        - NEXT_PUBLIC_SOCKET_URL=https://attendance.shinigami.io.vn
     container_name: attendance_frontend
     environment:
       NEXT_PUBLIC_API_URL: "https://attendance.shinigami.io.vn/api"
