@@ -55,11 +55,12 @@ export default function AdminDashboard() {
         // Map assignments to Staff interface
         const mapped = data.map((a: any) => {
           const log = a.attendance_logs?.[0];
+          const serverName = a.shift?.server?.name || a.shift?.name || 'Ca làm';
           return {
             id: a.id,
             userId: a.user_id,
             name: a.user.full_name,
-            shift: `${a.shift.name} (${a.shift.start_time} - ${a.shift.end_time})`,
+            shift: `${serverName} (${a.shift.start_time} - ${a.shift.end_time})`,
             status: (log?.status || 'PENDING') as AttendanceStatus,
             lateMinutes: log?.late_minutes || 0,
           };

@@ -7,14 +7,46 @@ export class ShiftsService {
 
   async findAllShifts() {
     return this.prisma.shift.findMany({
+      include: { server: true },
       orderBy: { created_at: 'desc' }
     });
   }
 
   async createShift(data: any) {
+    let serverId = data.server_id;
+
+    if (data.server_ids && Array.isArray(data.server_ids) && data.server_ids.length > 0) {
+      if (data.server_ids.length === 1) {
+        serverId = data.server_ids[0];
+      } else {
+        const dbServers = await this.prisma.server.findMany({
+          where: { id: { in: data.server_ids } },
+          select: { name: true }
+        });
+        
+        const combinedName = dbServers
+          .map(s => s.name)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+          .join('+');
+
+        let compositeServer = await this.prisma.server.findUnique({
+          where: { name: combinedName }
+        });
+
+        if (!compositeServer) {
+          compositeServer = await this.prisma.server.create({
+            data: { name: combinedName }
+          });
+        }
+        
+        serverId = compositeServer.id;
+      }
+    }
+
     return this.prisma.shift.create({
       data: {
         name: data.name,
+        server_id: serverId,
         start_time: data.start_time,
         end_time: data.end_time,
         grace_minutes: data.grace_minutes ? parseInt(data.grace_minutes) : 5,
@@ -62,14 +94,24 @@ export class ShiftsService {
     return results;
   }
   
-  async getAssignments() {
+  async getAssignments(query?: { start_date?: string; end_date?: string }) {
+    const where: any = {};
+    if (query?.start_date && query?.end_date) {
+      where.work_date = {
+        gte: new Date(query.start_date),
+        lte: new Date(query.end_date),
+      };
+    }
     return this.prisma.shiftAssignment.findMany({
+      where,
       include: {
         user: true,
-        shift: true,
+        shift: {
+          include: { server: true }
+        },
         attendance_logs: true,
       },
-      orderBy: { work_date: 'desc' }
+      orderBy: { work_date: 'asc' }
     });
   }
 
@@ -78,6 +120,7 @@ export class ShiftsService {
       where: { id },
       data: {
         name: data.name,
+        server_id: data.server_id,
         start_time: data.start_time,
         end_time: data.end_time,
         grace_minutes: data.grace_minutes ? parseInt(data.grace_minutes) : undefined,
@@ -175,6 +218,91 @@ export class ShiftsService {
       // 3. Delete the ShiftAssignment itself
       return tx.shiftAssignment.delete({
         where: { id },
+      });
+    });
+  }
+
+  async syncAssignments(data: { shift_id: string; work_date: string; user_ids: string[] }) {
+    const workDate = new Date(data.work_date);
+    const targetUserIds = data.user_ids || [];
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Fetch current assignments for this slot & date
+      const currentAssignments = await tx.shiftAssignment.findMany({
+        where: {
+          shift_id: data.shift_id,
+          work_date: workDate,
+        },
+      });
+
+      const currentAssigneeIds = currentAssignments.map(a => a.user_id);
+
+      // 2. Identify who to remove
+      const toRemove = currentAssignments.filter(a => !targetUserIds.includes(a.user_id));
+      for (const assignment of toRemove) {
+        // Delete escalation logs
+        const logs = await tx.attendanceLog.findMany({
+          where: { shift_assignment_id: assignment.id },
+          select: { id: true },
+        });
+        const logIds = logs.map(l => l.id);
+        if (logIds.length > 0) {
+          await tx.escalationLog.deleteMany({
+            where: { attendance_id: { in: logIds } },
+          });
+        }
+        // Delete attendance logs
+        await tx.attendanceLog.deleteMany({
+          where: { shift_assignment_id: assignment.id },
+        });
+        // Delete assignment
+        await tx.shiftAssignment.delete({
+          where: { id: assignment.id },
+        });
+      }
+
+      // 3. Identify who to add
+      const toAdd = targetUserIds.filter(id => !currentAssigneeIds.includes(id));
+      const addedAssignments = [];
+      for (const userId of toAdd) {
+        const assignment = await tx.shiftAssignment.create({
+          data: {
+            user_id: userId,
+            shift_id: data.shift_id,
+            work_date: workDate,
+            status: 'SCHEDULED',
+          },
+          include: {
+            user: true,
+            shift: true,
+          }
+        });
+
+        // Create AttendanceLog
+        await tx.attendanceLog.create({
+          data: {
+            user_id: userId,
+            shift_assignment_id: assignment.id,
+            status: 'PENDING',
+          }
+        });
+
+        addedAssignments.push(assignment);
+      }
+
+      // Return the current list of assignments after sync
+      return tx.shiftAssignment.findMany({
+        where: {
+          shift_id: data.shift_id,
+          work_date: workDate,
+        },
+        include: {
+          user: true,
+          shift: {
+            include: { server: true }
+          },
+          attendance_logs: true,
+        }
       });
     });
   }

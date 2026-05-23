@@ -12,7 +12,7 @@ export class SchedulerService {
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
     private readonly realtimeGateway: RealtimeGateway,
-  ) {}
+  ) { }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async handleCron() {
@@ -36,7 +36,11 @@ export class SchedulerService {
       },
       include: {
         user: true,
-        shift: true,
+        shift: {
+          include: {
+            server: true,
+          },
+        },
         attendance_logs: true,
       },
     });
@@ -45,6 +49,10 @@ export class SchedulerService {
 
     for (const assignment of assignments) {
       if (!assignment.user.telegram_id) continue;
+
+      const shiftDisplayName = assignment.shift.name
+        ? `${assignment.shift.server?.name} (${assignment.shift.name})`
+        : (assignment.shift.server?.name || 'N/A');
 
       // Get or create attendance log
       let log = assignment.attendance_logs[0];
@@ -90,7 +98,7 @@ export class SchedulerService {
               type: 'REMINDER_T10',
               chatId: assignment.user.telegram_id,
               data: {
-                shiftName: assignment.shift.name,
+                shiftName: shiftDisplayName,
                 startTime: assignment.shift.start_time,
                 endTime: assignment.shift.end_time,
                 dateStr,
@@ -131,14 +139,14 @@ export class SchedulerService {
             });
 
             // Alert manager via Telegram
-            const alertMsg = `⚠️ CẢNH BÁO LEVEL 1: Nhân sự [${assignment.user.full_name}] chưa xác nhận ca làm [${assignment.shift.name}] ngày ${dateStr} (bắt đầu lúc ${assignment.shift.start_time}).`;
+            const alertMsg = `⚠️ CẢNH BÁO LEVEL 1: Nhân sự [${assignment.user.full_name}] chưa xác nhận ca làm [${shiftDisplayName}] ngày ${dateStr} (bắt đầu lúc ${assignment.shift.start_time}).`;
             await this.queueManagersNotification(alertMsg);
 
             // Realtime Socket warning event
             this.realtimeGateway.notifyDashboard('attendance-warning', {
               userId: assignment.user_id,
               name: assignment.user.full_name,
-              shift: assignment.shift.name,
+              shift: shiftDisplayName,
               level: 1,
             });
           }
@@ -185,7 +193,7 @@ export class SchedulerService {
               type: 'TEXT',
               chatId: assignment.user.telegram_id,
               data: {
-                message: `❌ Bạn đã bị ghi nhận đi trễ cho ca [${assignment.shift.name}] ngày ${dateStr}.`,
+                message: `❌ Bạn đã bị ghi nhận đi trễ cho ca [${shiftDisplayName}] ngày ${dateStr}.`,
               },
             }
           );
@@ -206,7 +214,7 @@ export class SchedulerService {
                 id: log.id,
                 userId: assignment.user_id,
                 name: assignment.user.full_name,
-                shift: `${assignment.shift.name} (${assignment.shift.start_time} - ${assignment.shift.end_time})`,
+                shift: `${shiftDisplayName} (${assignment.shift.start_time}${assignment.shift.end_time ? ` - ${assignment.shift.end_time}` : ''})`,
                 status: 'LATE',
               });
             }
@@ -233,7 +241,7 @@ export class SchedulerService {
               this.realtimeGateway.notifyDashboard('attendance-late', {
                 userId: assignment.user_id,
                 name: assignment.user.full_name,
-                shift: assignment.shift.name,
+                shift: shiftDisplayName,
                 level: 2,
               });
             }

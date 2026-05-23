@@ -12,6 +12,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
 import { UsersModule } from './users/users.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { AuthModule } from './auth/auth.module';
+import { ServersModule } from './servers/servers.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AuthModule } from './auth/auth.module';
     UsersModule,
     ShiftsModule,
     AuthModule,
+    ServersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

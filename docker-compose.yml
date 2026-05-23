@@ -10,6 +10,8 @@ services:
       POSTGRES_DB: attendance_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5489:5432"
     restart: unless-stopped
     networks:
       - internal
@@ -19,6 +21,8 @@ services:
     container_name: attendance_redis
     volumes:
       - redis_data:/data
+    ports:
+      - "6379:6379"
     restart: unless-stopped
     networks:
       - internal

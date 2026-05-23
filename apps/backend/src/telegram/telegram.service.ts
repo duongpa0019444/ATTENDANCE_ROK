@@ -178,9 +178,10 @@ export class TelegramService implements OnModuleInit {
     if (!this.bot) return;
     try {
       const dateText = dateStr ? ` ngày ${dateStr}` : '';
+      const formattedShiftName = shiftName && shiftName !== 'null' ? shiftName : 'N/A';
       await this.bot.telegram.sendMessage(
         chatId,
-        `🔔 Nhắc nhở: Còn ${minutesLeft} phút nữa là tới ca làm [${shiftName}]${dateText}. Vui lòng chuẩn bị!`,
+        `🔔 Nhắc nhở: Còn ${minutesLeft} phút nữa là tới ca làm [${formattedShiftName}]${dateText}. Vui lòng chuẩn bị!`,
         Markup.inlineKeyboard([
           Markup.button.callback('✅ Xác nhận chuẩn bị', `confirm_shift_${assignmentId}`),
           Markup.button.callback('⚠️ Xin đi trễ', `late_shift_${assignmentId}`),
@@ -196,9 +197,11 @@ export class TelegramService implements OnModuleInit {
     try {
       const minText = minutesLeft ? ` (Còn ${minutesLeft} phút)` : '';
       const dateText = dateStr ? `Ngày: ${dateStr}\n` : '';
+      const timeText = endTime ? `${startTime} - ${endTime}` : startTime;
+      const formattedShiftName = shiftName && shiftName !== 'null' ? shiftName : 'N/A';
       await this.bot.telegram.sendMessage(
         chatId,
-        `🔔 Sắp tới ca làm${minText}\n\nCa: ${shiftName}\n${dateText}Thời gian: ${startTime} - ${endTime}\n\nVui lòng xác nhận bạn đã sẵn sàng.\n*(Bạn cũng có thể gửi vị trí trực tiếp để check-in sớm)*`,
+        `🔔 Sắp tới ca làm${minText}\n\nCa: ${formattedShiftName}\n${dateText}Thời gian: ${timeText}\n\nVui lòng xác nhận bạn đã sẵn sàng.\n*(Bạn cũng có thể gửi vị trí trực tiếp để check-in sớm)*`,
         {
           parse_mode: 'Markdown',
           reply_markup: Markup.inlineKeyboard([
@@ -295,7 +298,7 @@ export class TelegramService implements OnModuleInit {
   private async handleReadyAction(ctx: any, assignmentId: string) {
     const log = await this.prisma.attendanceLog.findFirst({
       where: { shift_assignment_id: assignmentId },
-      include: { shift_assignment: { include: { user: true, shift: true } } }
+      include: { shift_assignment: { include: { user: true, shift: { include: { server: true } } } } }
     });
     if (!log) {
       await ctx.reply(`❌ Không tìm thấy thông tin ca làm.`);
@@ -309,7 +312,7 @@ export class TelegramService implements OnModuleInit {
         status: 'READY',
         confirm_at: new Date(),
       },
-      include: { shift_assignment: { include: { user: true, shift: true } } }
+      include: { shift_assignment: { include: { user: true, shift: { include: { server: true } } } } }
     });
 
     await this.prisma.auditLog.create({
@@ -322,11 +325,14 @@ export class TelegramService implements OnModuleInit {
       }
     });
 
+    const shift = updatedLog.shift_assignment.shift;
+    const shiftDisplayName = shift.name ? `${shift.server?.name} (${shift.name})` : (shift.server?.name || 'N/A');
+
     this.realtimeGateway.notifyDashboard('attendance-updated', {
       id: updatedLog.id,
       userId: updatedLog.user_id,
       name: updatedLog.shift_assignment.user.full_name,
-      shift: `${updatedLog.shift_assignment.shift.name} (${updatedLog.shift_assignment.shift.start_time} - ${updatedLog.shift_assignment.shift.end_time})`,
+      shift: `${shiftDisplayName} (${shift.start_time}${shift.end_time ? ` - ${shift.end_time}` : ''})`,
       status: 'READY',
     });
 
@@ -422,7 +428,11 @@ export class TelegramService implements OnModuleInit {
         shift_assignment: {
           include: {
             user: true,
-            shift: true,
+            shift: {
+              include: {
+                server: true,
+              },
+            },
           },
         },
       },
@@ -491,7 +501,11 @@ export class TelegramService implements OnModuleInit {
           shift_assignment: {
             include: {
               user: true,
-              shift: true,
+              shift: {
+                include: {
+                  server: true,
+                },
+              },
             },
           },
         },
@@ -513,17 +527,20 @@ export class TelegramService implements OnModuleInit {
         },
       });
 
+      const shift = updatedLog.shift_assignment.shift;
+      const shiftDisplayName = shift.name ? `${shift.server?.name} (${shift.name})` : (shift.server?.name || 'N/A');
+
       // Notify Dashboard
       this.realtimeGateway.notifyDashboard('attendance-updated', {
         id: updatedLog.id,
         userId: updatedLog.user_id,
         name: updatedLog.shift_assignment.user.full_name,
-        shift: `${updatedLog.shift_assignment.shift.name} (${updatedLog.shift_assignment.shift.start_time} - ${updatedLog.shift_assignment.shift.end_time})`,
+        shift: `${shiftDisplayName} (${shift.start_time}${shift.end_time ? ` - ${shift.end_time}` : ''})`,
         status: 'CHECKED_IN',
       });
 
       await ctx.reply(
-        `✅ Check-in thành công cho ca [${updatedLog.shift_assignment.shift.name}]!\n` +
+        `✅ Check-in thành công cho ca [${shiftDisplayName}]!\n` +
         `📍 Khoảng cách tới văn phòng: ${Math.round(distance)}m (Yêu cầu: <= ${officeRadius}m).`,
         Markup.removeKeyboard()
       );

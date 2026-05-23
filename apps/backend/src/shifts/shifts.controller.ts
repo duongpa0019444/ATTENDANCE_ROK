@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Delete, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Delete, Param, UseGuards, Query } from '@nestjs/common';
 import { ShiftsService } from './shifts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -32,8 +32,13 @@ export class ShiftsController {
   }
 
   @Get('assignments')
-  getAssignments() {
-    return this.shiftsService.getAssignments();
+  getAssignments(@Query() query?: any) {
+    return this.shiftsService.getAssignments(query);
+  }
+
+  @Post('sync-assignments')
+  syncAssignments(@Body() data: { shift_id: string; work_date: string; user_ids: string[] }) {
+    return this.shiftsService.syncAssignments(data);
   }
 
   @Post('assign')
