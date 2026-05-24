@@ -378,7 +378,7 @@ export default function ShiftsPage() {
           <div className="space-y-6">
 
             {/* Top Toolbar */}
-            <div className="relative z-30 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/50 border border-slate-800/80 p-4 rounded-xl backdrop-blur-xl">
+            <div className="relative z-[60] flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/50 border border-slate-800/80 p-4 rounded-xl backdrop-blur-xl">
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium text-slate-400">Tuần phân ca:</span>
                 <DatePicker
@@ -389,7 +389,9 @@ export default function ShiftsPage() {
                   showWeekPicker
                   value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 6), 'dd/MM')}`}
                   formatWeekDay={formatWeekDayLabel}
-                  popperClassName="z-50"
+                  portalId="shift-week-datepicker-portal"
+                  popperClassName="shift-week-datepicker-popper"
+                  popperPlacement="bottom-start"
                   className="flex h-10 w-52 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-cyan-400 font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
                 />
               </div>

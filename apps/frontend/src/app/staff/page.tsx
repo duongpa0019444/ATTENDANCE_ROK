@@ -280,6 +280,8 @@ export default function StaffPage() {
   };
 
   const selectedDayAssignments = getAssignmentsForDay(selectedDay);
+  const payablePayrollDetails = payrollData?.details.filter((detail) => detail.isCompleted) ?? [];
+  const pendingPayrollDetailCount = payrollData ? payrollData.details.length - payablePayrollDetails.length : 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 p-3 sm:p-6 font-sans selection:bg-cyan-500/30">
@@ -504,7 +506,9 @@ export default function StaffPage() {
                       dateFormat="dd/MM/yyyy"
                       locale="vi"
                       formatWeekDay={formatWeekDayLabel}
-                      popperClassName="z-50"
+                      portalId="staff-payroll-datepicker-portal"
+                      popperClassName="staff-payroll-datepicker-popper"
+                      popperPlacement="bottom-start"
                       className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
                     />
                   </div>
@@ -519,7 +523,9 @@ export default function StaffPage() {
                       dateFormat="dd/MM/yyyy"
                       locale="vi"
                       formatWeekDay={formatWeekDayLabel}
-                      popperClassName="z-50"
+                      portalId="staff-payroll-datepicker-portal"
+                      popperClassName="staff-payroll-datepicker-popper"
+                      popperPlacement="bottom-start"
                       className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
                     />
                   </div>
@@ -563,7 +569,7 @@ export default function StaffPage() {
                 </Card>
 
                 {/* Salary breakdown cards grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                     <div className="text-slate-400 text-[10px] font-mono leading-none">LƯƠNG CƠ BẢN</div>
                     <div className="text-sm sm:text-base font-bold text-slate-200">{formatVND(payrollData.totalBaseSalary)}</div>
@@ -573,13 +579,20 @@ export default function StaffPage() {
                     <div className="text-sm sm:text-base font-bold text-cyan-400">{formatVND(payrollData.totalNightBonus)}</div>
                   </Card>
                   <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                    <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP CT</div>
+                    <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP CUỐI TUẦN</div>
                     <div className="text-sm sm:text-base font-bold text-indigo-400">{formatVND(payrollData.totalWeekendBonus)}</div>
                   </Card>
-                  <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                    <div className="text-slate-400 text-[10px] font-mono leading-none">THƯỞNG CA</div>
-                    <div className="text-sm sm:text-base font-bold text-yellow-400">{formatVND(payrollData.totalShiftReward)}</div>
-                  </Card>
+                </div>
+
+                <div className="flex items-start gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[11px] sm:text-xs text-cyan-700 dark:text-cyan-400">
+                  <AlertCircle className="w-4 h-4 text-cyan-700 dark:text-cyan-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">Chi tiết bên dưới chỉ hiển thị các ca đã được tính lương.</div>
+                    <div className="text-cyan-700 dark:text-cyan-400">
+                      Ca làm hôm nay sẽ được hệ thống tính từ ngày hôm sau nên chưa xuất hiện trong danh sách này.
+                      {pendingPayrollDetailCount > 0 ? ` Có ${pendingPayrollDetailCount} ca trong khoảng ngày đang chờ đến ngày tính lương.` : ''}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Desktop Shifts Breakdown Table */}
@@ -596,12 +609,11 @@ export default function StaffPage() {
                           <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Lương ca</TableHead>
                           <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp đêm</TableHead>
                           <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp CT</TableHead>
-                          <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Thưởng ca</TableHead>
                           <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Tổng nhận</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {payrollData.details.map((detail, idx) => (
+                        {payablePayrollDetails.map((detail, idx) => (
                           <TableRow key={idx} className="border-slate-850 hover:bg-slate-800/10">
                             <TableCell className="text-xs font-mono text-slate-300">
                               {format(parseISO(detail.workDate), 'dd/MM/yyyy')}
@@ -613,10 +625,16 @@ export default function StaffPage() {
                             <TableCell className="text-xs font-mono text-slate-300 text-right">{formatVND(detail.baseSalary)}</TableCell>
                             <TableCell className="text-xs font-mono text-cyan-400 text-right">{formatVND(detail.nightBonus)}</TableCell>
                             <TableCell className="text-xs font-mono text-indigo-400 text-right">{formatVND(detail.weekendBonus)}</TableCell>
-                            <TableCell className="text-xs font-mono text-yellow-400 text-right">{formatVND(detail.shiftReward)}</TableCell>
                             <TableCell className="text-xs font-bold font-mono text-emerald-400 text-right">{formatVND(detail.totalSalary)}</TableCell>
                           </TableRow>
                         ))}
+                        {payablePayrollDetails.length === 0 && (
+                          <TableRow className="border-slate-850">
+                            <TableCell colSpan={6} className="h-20 text-center text-xs text-slate-500 font-mono">
+                              Chưa có ca nào đủ điều kiện tính lương trong khoảng ngày này.
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </CardContent>
@@ -625,7 +643,7 @@ export default function StaffPage() {
                 {/* Mobile Shifts Breakdown List */}
                 <div className="block sm:hidden space-y-3">
                   <h3 className="text-xs uppercase font-mono tracking-wider text-slate-400 px-1">Chi tiết lương từng ca</h3>
-                  {payrollData.details.map((detail, idx) => (
+                  {payablePayrollDetails.map((detail, idx) => (
                     <Card key={idx} className="bg-slate-900/40 border-slate-850">
                       <CardContent className="p-3 space-y-2">
                         <div className="flex justify-between items-center pb-2 border-b border-slate-850">
@@ -639,7 +657,7 @@ export default function StaffPage() {
                         <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 font-mono">
                           <div>
                             <span className="text-slate-500 block uppercase">SERVER / CA</span>
-                            <span className="font-bold text-slate-300">{detail.serverName} - {detail.shiftName}</span>
+                            <span className="font-bold text-slate-300">{detail.serverName} - {detail.shiftName} ({detail.startTime})</span>
                           </div>
                           <div>
                             <span className="text-slate-500 block uppercase">LƯƠNG CƠ BẢN</span>
@@ -653,14 +671,17 @@ export default function StaffPage() {
                             <span className="text-slate-500 block uppercase">PHỤ CẤP CUỐI TUẦN</span>
                             <span className="text-indigo-400">{formatVND(detail.weekendBonus)}</span>
                           </div>
-                          <div>
-                            <span className="text-slate-500 block uppercase">THƯỞNG CA</span>
-                            <span className="text-yellow-400">{formatVND(detail.shiftReward)}</span>
-                          </div>
                         </div>
                       </CardContent>
                     </Card>
                   ))}
+                  {payablePayrollDetails.length === 0 && (
+                    <Card className="bg-slate-900/40 border-slate-850">
+                      <CardContent className="p-4 text-center text-xs text-slate-500 font-mono">
+                        Chưa có ca nào đủ điều kiện tính lương trong khoảng ngày này.
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               </div>
             )}

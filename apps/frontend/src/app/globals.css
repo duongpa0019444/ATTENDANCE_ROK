@@ -218,7 +218,14 @@
 }
 
 .react-datepicker-popper {
-  z-index: 50 !important;
+  z-index: 9999 !important;
+}
+
+#staff-payroll-datepicker-portal,
+#shift-week-datepicker-portal,
+.staff-payroll-datepicker-popper,
+.shift-week-datepicker-popper {
+  z-index: 9999 !important;
 }
 
 /* ==========================================

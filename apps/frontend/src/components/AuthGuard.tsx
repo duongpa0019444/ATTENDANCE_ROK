@@ -152,7 +152,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             {userRole === 'STAFF' ? (
               <>
                 <a href="/staff" className={getMenuClass('/staff')}>Lịch & Bảng Lương</a>
-                <a href="/guide" className={getMenuClass('/guide')}>Hướng Dẫn</a>
               </>
             ) : (
               <>
@@ -242,13 +241,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                   className={getMobileMenuClass('/staff')}
                 >
                   Lịch & Bảng Lương
-                </a>
-                <a 
-                  href="/guide" 
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className={getMobileMenuClass('/guide')}
-                >
-                  Hướng Dẫn
                 </a>
               </>
             ) : (

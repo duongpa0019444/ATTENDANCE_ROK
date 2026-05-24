@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api';
-import { Filter } from 'lucide-react';
+import { Check, Copy, Filter } from 'lucide-react';
 
 const selectStyles = {
   control: (base: any, state: any) => ({
@@ -132,6 +132,7 @@ export default function UsersPage() {
   const [telegramLink, setTelegramLink] = useState<any>(null);
   const [linkStatus, setLinkStatus] = useState<string>('IDLE'); // IDLE | LOADING | PENDING | LINKED | EXPIRED | ERROR
   const [linkingUser, setLinkingUser] = useState<any>(null);
+  const [isTelegramLinkCopied, setIsTelegramLinkCopied] = useState(false);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
@@ -203,6 +204,7 @@ export default function UsersPage() {
     setLinkingUser(user);
     setLinkStatus('LOADING');
     setTelegramLink(null);
+    setIsTelegramLinkCopied(false);
     setIsTelegramDialogOpen(true);
 
     try {
@@ -253,8 +255,22 @@ export default function UsersPage() {
   const closeTelegramDialog = () => {
     setIsTelegramDialogOpen(false);
     setTelegramLink(null);
+    setIsTelegramLinkCopied(false);
     setLinkStatus('IDLE');
     setLinkingUser(null);
+  };
+
+  const handleCopyTelegramLink = async () => {
+    if (!telegramLink?.deepLink) return;
+
+    try {
+      await navigator.clipboard.writeText(telegramLink.deepLink);
+      setIsTelegramLinkCopied(true);
+      setTimeout(() => setIsTelegramLinkCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy Telegram link:', error);
+      alert('Không thể sao chép link. Vui lòng copy thủ công từ trình duyệt.');
+    }
   };
 
   return (
@@ -560,6 +576,28 @@ export default function UsersPage() {
                   </svg>
                   Mở Telegram
                 </a>
+
+                <Button
+                  type="button"
+                  onClick={handleCopyTelegramLink}
+                  className={`flex items-center justify-center gap-2 w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
+                    isTelegramLinkCopied
+                      ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'
+                      : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/20'
+                  }`}
+                >
+                  {isTelegramLinkCopied ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Đã sao chép link
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Sao chép link gửi nhân viên
+                    </>
+                  )}
+                </Button>
 
                 {/* Waiting indicator */}
                 <div className="flex items-center justify-center gap-2 py-2">
