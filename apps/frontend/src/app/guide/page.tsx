@@ -54,6 +54,7 @@ const adminSteps = [
       'Bảng matrix hiện server/ca theo hàng và các ngày Thứ 2 đến Chủ nhật theo cột. Click vào ô giao nhau để phân nhân viên.',
       'Bạn có thể nhanh chóng sửa/xóa ca bằng cách DI CHUỘT (Hover) vào cột SERVER / CA LÀM và bấm nút sửa/xóa, hoặc CLICK CHUỘT PHẢI để mở menu ngữ cảnh tùy chọn.',
       'Modal chỉnh sửa ca làm việc cho phép thay đổi cả tên ca, giờ bắt đầu và chọn lại các Server game gộp/đơn lẻ.',
+      'Nếu tuần đã nằm trong giai đoạn chốt bảng lương, trang Phân Ca sẽ hiện cảnh báo và khóa các thao tác thêm ca, sửa/xóa ca, phân công nhân sự hoặc sao chép lịch tuần.',
     ],
   },
   {
@@ -65,6 +66,10 @@ const adminSteps = [
       'Nút Xuất Báo Cáo tải file CSV tổng hợp bảng lương.',
       'Tab Cấu Hình Thù Lao dùng để đặt lương ca mặc định, các loại phụ cấp đêm và phụ cấp cuối tuần.',
       'Lương ca có thể cấu hình riêng cho từng server hoạt động chính thức (các ca gộp server tự động đã được lọc bỏ để tránh nhầm lẫn).',
+      'Trạng thái ĐÃ CHỐT/CHƯA CHỐT nằm cạnh tiêu đề CYBER_PAYROLL, dựa trên khoảng ngày đang chọn.',
+      'Bấm Chốt bảng lương để đóng băng dữ liệu lương của khoảng ngày hiện tại theo lịch phân ca, điểm danh và cấu hình thù lao tại thời điểm chốt.',
+      'Sau khi chốt, bảng lương trong khoảng đó sẽ đọc từ bản snapshot cố định; các thay đổi sau này về phân ca, điểm danh hoặc cấu hình thù lao sẽ không làm đổi số lương đã chốt.',
+      'Khi cần điều chỉnh lại dữ liệu, bấm Hủy chốt để mở khóa khoảng ngày. Bảng lương sẽ quay lại tính toán động và các thay đổi mới sẽ có hiệu lực.',
     ],
   },
 ];
@@ -125,6 +130,12 @@ const faqItems = [
     question: 'Nhân viên làm hôm nay nhưng chưa thấy tính lương?',
     answer:
       'Hệ thống chỉ tính lương cho ca có ngày làm nhỏ hơn ngày hiện tại. Ca làm trong ngày hôm nay sẽ được đưa vào bảng lương từ ngày hôm sau.',
+  },
+  {
+    label: 'Chốt lương',
+    question: 'Vì sao không sửa được phân ca hoặc cấu hình lương trong một tuần?',
+    answer:
+      'Tuần đó có thể đang nằm trong giai đoạn đã chốt bảng lương. Vào trang Bảng Lương, chọn đúng khoảng ngày đang bị khóa và bấm Hủy chốt nếu cần chỉnh sửa lại lịch phân ca, điểm danh hoặc cấu hình thù lao.',
   },
   {
     label: 'Tài khoản',
