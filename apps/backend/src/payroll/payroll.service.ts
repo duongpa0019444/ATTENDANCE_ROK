@@ -3,12 +3,110 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class PayrollService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
-  async calculatePayroll(startDateStr: string, endDateStr: string, userId?: string) {
+
+  private formatDateOnly(date: Date) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+    return `${year}-${month}-${day}`;
+  }
+
+  private parseDateOnly(dateStr: string) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  private addDaysDateOnly(dateStr: string, days: number) {
+    const date = this.parseDateOnly(dateStr);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().split('T')[0];
+  }
+
+  async calculatePayroll(startDateStr: string, endDateStr: string, userId?: string, forceDynamic = false) {
     const startDate = new Date(startDateStr);
     const endDate = new Date(endDateStr);
     endDate.setHours(23, 59, 59, 999);
+
+    const start = new Date(startDateStr);
+    const end = new Date(endDateStr);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    if (!forceDynamic) {
+      const lockedPeriod = await this.prisma.lockedPeriod.findFirst({
+        where: {
+          start_date: { lte: start },
+          end_date: { gte: end },
+        },
+        include: {
+          payrolls: true,
+        },
+      });
+
+      if (lockedPeriod) {
+        const payrolls = userId
+          ? lockedPeriod.payrolls.filter((p) => p.user_id === userId)
+          : lockedPeriod.payrolls;
+
+        return payrolls.map((p) => {
+          // Filter shift details to only include shifts within [start, end]
+          const rawDetails = p.details as any[] || [];
+          const details = rawDetails.filter((d) => {
+            if (!d.workDate) return false;
+            const wDate = new Date(d.workDate);
+            return wDate >= start && wDate <= end;
+          });
+
+          // Recalculate totals based on filtered details
+          let totalShifts = details.length;
+          let completedShifts = 0;
+          let absentShifts = 0;
+          let totalBaseSalary = 0;
+          let totalNightBonus = 0;
+          let totalWeekendBonus = 0;
+          let totalShiftReward = 0;
+          let totalSalary = 0;
+
+          for (const d of details) {
+            if (d.status === 'ABSENT') {
+              absentShifts += 1;
+            }
+            if (d.isCompleted) {
+              completedShifts += 1;
+              totalBaseSalary += d.baseSalary || 0;
+              totalNightBonus += d.nightBonus || 0;
+              totalWeekendBonus += d.weekendBonus || 0;
+              totalShiftReward += d.shiftReward || 0;
+              totalSalary += d.totalSalary || 0;
+            }
+          }
+
+          return {
+            userId: p.user_id,
+            username: p.username,
+            fullName: p.full_name,
+            role: p.role,
+            totalShifts,
+            completedShifts,
+            absentShifts,
+            totalBaseSalary,
+            totalNightBonus,
+            totalWeekendBonus,
+            totalShiftReward,
+            totalSalary,
+            details,
+          };
+        });
+      }
+    }
 
     // Fetch system-wide configurations
     const rawNight22_3 = await this.prisma.getSetting('NIGHT_SHIFT_22_3_BONUS', '10000');
@@ -50,12 +148,12 @@ export class PayrollService {
     for (const assignment of assignments) {
       const user = assignment.user;
       const log = assignment.attendance_logs?.[0];
-      
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const workDate = new Date(assignment.work_date);
       workDate.setHours(0, 0, 0, 0);
-      
+
       // Chỉ cần được phân ca và đã qua ngày đó là được tính
       const isCompleted = workDate < today;
 
@@ -97,8 +195,8 @@ export class PayrollService {
         // 1. Base Salary
         const shiftBase = assignment.shift.base_salary;
         const serverBase = assignment.shift.server?.base_salary;
-        baseSalary = shiftBase !== null && shiftBase !== undefined 
-          ? shiftBase 
+        baseSalary = shiftBase !== null && shiftBase !== undefined
+          ? shiftBase
           : (serverBase !== null && serverBase !== undefined && serverBase > 0 ? serverBase : defaultSalary);
 
         // 2. Night Shift Bonus
@@ -189,6 +287,106 @@ export class PayrollService {
     if (body.defaultServerSalary !== undefined) {
       await this.prisma.setSetting('DEFAULT_SERVER_SALARY', body.defaultServerSalary.toString());
     }
+    return { success: true };
+  }
+
+  async getPeriodLockStatus(startDateStr: string, endDateStr: string) {
+    const start = this.parseDateOnly(startDateStr);
+    const end = this.parseDateOnly(endDateStr);
+
+    const locked = await this.prisma.lockedPeriod.findFirst({
+      where: {
+        start_date: { lte: start },
+        end_date: { gte: end },
+      },
+    });
+
+    if (locked) {
+      const lockedStartDate = this.formatDateOnly(locked.start_date);
+      const lockedEndDate = this.formatDateOnly(locked.end_date);
+
+      return {
+        locked: true,
+        startDate: this.addDaysDateOnly(lockedStartDate, 1) === startDateStr ? startDateStr : lockedStartDate,
+        endDate: lockedEndDate,
+      };
+    }
+
+    return { locked: false };
+  }
+
+  async lockPeriod(startDateStr: string, endDateStr: string) {
+    const start = this.parseDateOnly(startDateStr);
+    const end = this.parseDateOnly(endDateStr);
+
+    // 1. Kiểm tra xem đã chốt chưa
+    const existing = await this.prisma.lockedPeriod.findFirst({
+      where: {
+        start_date: start,
+        end_date: end,
+      },
+    });
+
+    if (existing) {
+      return { success: true, message: 'Bảng lương giai đoạn này đã được chốt từ trước.' };
+    }
+
+    // 2. Tính toán bảng lương động tại thời điểm này
+    const payroll = await this.calculatePayroll(startDateStr, endDateStr, undefined, true);
+
+    // 3. Tạo locked period và các bản ghi payroll snapshot tương ứng
+    await this.prisma.$transaction(async (tx) => {
+      const lockedPeriod = await tx.lockedPeriod.create({
+        data: {
+          start_date: start,
+          end_date: end,
+        },
+      });
+
+      for (const record of payroll) {
+        await tx.lockedPayroll.create({
+          data: {
+            locked_period_id: lockedPeriod.id,
+            user_id: record.userId,
+            username: record.username,
+            full_name: record.fullName,
+            role: record.role,
+            total_shifts: record.totalShifts,
+            completed_shifts: record.completedShifts,
+            absent_shifts: record.absentShifts,
+            total_base_salary: record.totalBaseSalary,
+            total_night_bonus: record.totalNightBonus,
+            total_weekend_bonus: record.totalWeekendBonus,
+            total_shift_reward: record.totalShiftReward,
+            total_salary: record.totalSalary,
+            details: record.details,
+          },
+        });
+      }
+    });
+
+    return { success: true };
+  }
+
+  async unlockPeriod(startDateStr: string, endDateStr: string) {
+    const start = this.parseDateOnly(startDateStr);
+    const end = this.parseDateOnly(endDateStr);
+
+    const locked = await this.prisma.lockedPeriod.findFirst({
+      where: {
+        start_date: { lte: start },
+        end_date: { gte: end },
+      },
+    });
+
+    if (!locked) {
+      return { success: false, message: 'Không tìm thấy bảng lương đã chốt trong khoảng thời gian này.' };
+    }
+
+    await this.prisma.lockedPeriod.delete({
+      where: { id: locked.id },
+    });
+
     return { success: true };
   }
 }

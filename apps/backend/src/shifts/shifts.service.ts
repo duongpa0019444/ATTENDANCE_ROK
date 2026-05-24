@@ -1,14 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ShiftsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAllShifts() {
+  async findAllShifts(weekStartDateStr?: string) {
+    const where: any = {};
+    if (weekStartDateStr) {
+      where.week_start_date = new Date(weekStartDateStr);
+    }
     return this.prisma.shift.findMany({
+      where,
       include: { server: true },
-      orderBy: { created_at: 'desc' }
+      orderBy: { start_time: 'asc' }
     });
   }
 
@@ -52,6 +57,7 @@ export class ShiftsService {
         grace_minutes: data.grace_minutes ? parseInt(data.grace_minutes) : 5,
         base_salary: data.base_salary !== undefined && data.base_salary !== null ? Number(data.base_salary) : null,
         bonus_salary: data.bonus_salary !== undefined && data.bonus_salary !== null ? Number(data.bonus_salary) : 0,
+        week_start_date: data.week_start_date ? new Date(data.week_start_date) : null,
       }
     });
   }
@@ -66,6 +72,9 @@ export class ShiftsService {
 
     for (const dateStr of dates) {
       const workDate = new Date(dateStr);
+      if (await this.prisma.isDateLocked(workDate)) {
+        throw new BadRequestException('Ngày phân ca này đã nằm trong giai đoạn chốt bảng lương. Không thể phân ca.');
+      }
 
       // Create shift assignment
       const assignment = await this.prisma.shiftAssignment.create({
@@ -126,11 +135,49 @@ export class ShiftsService {
   }
 
   async updateShift(id: string, data: any) {
+    const shift = await this.prisma.shift.findUnique({
+      where: { id },
+      select: { week_start_date: true },
+    });
+    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date))) {
+      throw new BadRequestException('Ca làm này thuộc tuần đã chốt bảng lương. Không thể sửa.');
+    }
+
+    let serverId = data.server_id;
+
+    if (data.server_ids && Array.isArray(data.server_ids) && data.server_ids.length > 0) {
+      if (data.server_ids.length === 1) {
+        serverId = data.server_ids[0];
+      } else {
+        const dbServers = await this.prisma.server.findMany({
+          where: { id: { in: data.server_ids } },
+          select: { name: true }
+        });
+        
+        const combinedName = dbServers
+          .map(s => s.name)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+          .join('+');
+
+        let compositeServer = await this.prisma.server.findUnique({
+          where: { name: combinedName }
+        });
+
+        if (!compositeServer) {
+          compositeServer = await this.prisma.server.create({
+            data: { name: combinedName }
+          });
+        }
+        
+        serverId = compositeServer.id;
+      }
+    }
+
     return this.prisma.shift.update({
       where: { id },
       data: {
         name: data.name,
-        server_id: data.server_id,
+        server_id: serverId,
         start_time: data.start_time,
         end_time: data.end_time,
         grace_minutes: data.grace_minutes ? parseInt(data.grace_minutes) : undefined,
@@ -141,12 +188,26 @@ export class ShiftsService {
   }
 
   async removeShift(id: string) {
+    const shift = await this.prisma.shift.findUnique({
+      where: { id },
+      select: { week_start_date: true },
+    });
+    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date))) {
+      throw new BadRequestException('Ca làm này thuộc tuần đã chốt bảng lương. Không thể xóa.');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       // 1. Find all assignments for this shift
       const assignments = await tx.shiftAssignment.findMany({
         where: { shift_id: id },
-        select: { id: true },
+        select: { id: true, work_date: true },
       });
+
+      for (const a of assignments) {
+        if (await this.prisma.isDateLocked(a.work_date)) {
+          throw new BadRequestException('Ca làm này có phân công thuộc ngày đã chốt bảng lương. Không thể xóa.');
+        }
+      }
       const assignmentIds = assignments.map(a => a.id);
 
       if (assignmentIds.length > 0) {
@@ -184,6 +245,17 @@ export class ShiftsService {
 
   async updateAssignment(id: string, data: any) {
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.shiftAssignment.findUnique({
+        where: { id },
+        select: { work_date: true },
+      });
+      if (existing && (await this.prisma.isDateLocked(existing.work_date))) {
+        throw new BadRequestException('Bản phân công này thuộc ngày đã chốt bảng lương. Không thể chỉnh sửa.');
+      }
+      if (data.work_date && (await this.prisma.isDateLocked(new Date(data.work_date)))) {
+        throw new BadRequestException('Ngày phân công mới đã bị chốt bảng lương. Không thể chuyển sang.');
+      }
+
       const updatedAssignment = await tx.shiftAssignment.update({
         where: { id },
         data: {
@@ -210,6 +282,13 @@ export class ShiftsService {
 
   async removeAssignment(id: string) {
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.shiftAssignment.findUnique({
+        where: { id },
+        select: { work_date: true },
+      });
+      if (existing && (await this.prisma.isDateLocked(existing.work_date))) {
+        throw new BadRequestException('Bản phân công này thuộc ngày đã chốt bảng lương. Không thể xóa.');
+      }
       // 1. Delete associated EscalationLogs if any exist (via AttendanceLog)
       const logs = await tx.attendanceLog.findMany({
         where: { shift_assignment_id: id },
@@ -236,6 +315,9 @@ export class ShiftsService {
 
   async syncAssignments(data: { shift_id: string; work_date: string; user_ids: string[] }) {
     const workDate = new Date(data.work_date);
+    if (await this.prisma.isDateLocked(workDate)) {
+      throw new BadRequestException('Ngày phân ca này đã được chốt bảng lương. Không thể phân công nhân sự.');
+    }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const isPastDate = workDate < today;
@@ -321,5 +403,48 @@ export class ShiftsService {
         }
       });
     });
+  }
+
+  async cloneWeek(fromWeekStr: string, toWeekStr: string) {
+    const fromWeek = new Date(fromWeekStr);
+    const toWeek = new Date(toWeekStr);
+
+    const toWeekEnd = new Date(toWeek);
+    toWeekEnd.setDate(toWeekEnd.getDate() + 6);
+    if (await this.prisma.isPeriodOverlappingLocked(toWeek, toWeekEnd)) {
+      throw new BadRequestException('Tuần nhận lịch sao chép chứa các ngày đã bị chốt bảng lương. Không thể sao chép.');
+    }
+
+    // 1. Fetch all shifts from the source week
+    const sourceShifts = await this.prisma.shift.findMany({
+      where: {
+        week_start_date: fromWeek,
+      },
+    });
+
+    if (sourceShifts.length === 0) {
+      return { success: false, message: 'Không tìm thấy ca làm việc ở tuần trước để kế thừa.' };
+    }
+
+    const clonedShifts = [];
+
+    // 2. Clone each shift to the target week
+    for (const shift of sourceShifts) {
+      const cloned = await this.prisma.shift.create({
+        data: {
+          server_id: shift.server_id,
+          name: shift.name,
+          start_time: shift.start_time,
+          end_time: shift.end_time,
+          grace_minutes: shift.grace_minutes,
+          base_salary: shift.base_salary,
+          bonus_salary: shift.bonus_salary,
+          week_start_date: toWeek,
+        },
+      });
+      clonedShifts.push(cloned);
+    }
+
+    return { success: true, count: clonedShifts.length };
   }
 }

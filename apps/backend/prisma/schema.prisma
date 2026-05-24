@@ -61,18 +61,20 @@ model Server {
 }
 
 model Shift {
-  id            String            @id @default(uuid())
-  server_id     String
-  name          String?
-  start_time    String            // e.g. "08:00"
-  end_time      String            // e.g. "17:00"
-  grace_minutes Int               @default(5)
-  base_salary   Float?
-  bonus_salary  Float             @default(0)
-  created_at    DateTime          @default(now())
+  id              String            @id @default(uuid())
+  server_id       String
+  name            String?
+  start_time      String            // e.g. "08:00"
+  end_time        String            // e.g. "17:00"
+  grace_minutes   Int               @default(5)
+  base_salary     Float?
+  bonus_salary    Float             @default(0)
+  created_at      DateTime          @default(now())
   
-  server        Server            @relation(fields: [server_id], references: [id], onDelete: Cascade)
-  assignments   ShiftAssignment[]
+  week_start_date DateTime?         @db.Date
+  
+  server          Server            @relation(fields: [server_id], references: [id], onDelete: Cascade)
+  assignments     ShiftAssignment[]
 
   @@map("shifts")
 }
@@ -149,4 +151,39 @@ model Setting {
 
   @@map("settings")
 }
+
+model LockedPeriod {
+  id         String          @id @default(uuid())
+  start_date DateTime        @db.Date
+  end_date   DateTime        @db.Date
+  created_at DateTime        @default(now())
+  payrolls   LockedPayroll[]
+
+  @@unique([start_date, end_date])
+  @@map("locked_periods")
+}
+
+model LockedPayroll {
+  id                  String       @id @default(uuid())
+  locked_period_id    String
+  user_id             String
+  username            String
+  full_name           String
+  role                String
+  total_shifts        Int
+  completed_shifts    Int
+  absent_shifts       Int
+  total_base_salary   Float
+  total_night_bonus   Float
+  total_weekend_bonus Float
+  total_shift_reward  Float
+  total_salary        Float
+  details             Json
+
+  locked_period       LockedPeriod @relation(fields: [locked_period_id], references: [id], onDelete: Cascade)
+
+  @@unique([locked_period_id, user_id])
+  @@map("locked_payrolls")
+}
+
 

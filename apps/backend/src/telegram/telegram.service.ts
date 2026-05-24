@@ -157,6 +157,12 @@ export class TelegramService implements OnModuleInit {
       return;
     }
 
+    if (await this.prisma.isDateLocked(log.shift_assignment.work_date)) {
+      await ctx.reply(`❌ Ca làm này đã được chốt bảng lương. Không thể cập nhật điểm danh.`);
+      await ctx.answerCbQuery();
+      return;
+    }
+
     if (log.status === 'READY') {
       await ctx.reply(`ℹ️ Ca làm này đã được bạn xác nhận trước đó.`);
       await ctx.answerCbQuery();

@@ -53,4 +53,43 @@ export class PayrollController {
   ) {
     return this.payrollService.updateSettings(body);
   }
+
+  @Get('lock-status')
+  async getLockStatus(
+    @Query('start_date') startDate: string,
+    @Query('end_date') endDate: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new Error('Missing start_date or end_date');
+    }
+    return this.payrollService.getPeriodLockStatus(startDate, endDate);
+  }
+
+  @Post('lock')
+  async lockPeriod(
+    @Body()
+    body: {
+      start_date: string;
+      end_date: string;
+    },
+  ) {
+    if (!body.start_date || !body.end_date) {
+      throw new Error('Missing start_date or end_date');
+    }
+    return this.payrollService.lockPeriod(body.start_date, body.end_date);
+  }
+
+  @Post('unlock')
+  async unlockPeriod(
+    @Body()
+    body: {
+      start_date: string;
+      end_date: string;
+    },
+  ) {
+    if (!body.start_date || !body.end_date) {
+      throw new Error('Missing start_date or end_date');
+    }
+    return this.payrollService.unlockPeriod(body.start_date, body.end_date);
+  }
 }

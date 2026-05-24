@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,6 +101,8 @@ export default function ShiftsPage() {
   const [selectedServerFilter, setSelectedServerFilter] = useState<string>('all');
   const [selectedUserFilter, setSelectedUserFilter] = useState<string>('all');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isWeekLocked, setIsWeekLocked] = useState<boolean>(false);
+  const [isCheckingWeekLock, setIsCheckingWeekLock] = useState<boolean>(false);
 
   // Selected Week Start Date (defaults to Monday of current week)
   const [selectedDate, setSelectedDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
@@ -119,7 +121,39 @@ export default function ShiftsPage() {
     server_ids: [] as string[],
     name: '',
     start_time: setHours(setMinutes(new Date(), 0), 8) as Date | null,
+    week_start_date: selectedDate as Date | null,
   });
+
+  // Week initialization Dialog state
+  const [isInitWeekDialogOpen, setIsInitWeekDialogOpen] = useState(false);
+  const [dialogWeekStr, setDialogWeekStr] = useState<string | null>(null);
+
+  // Right-click Context Menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    shift: any;
+  } | null>(null);
+
+  useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, []);
+
+  // Edit Shift Dialog States
+  const [isEditShiftDialogOpen, setIsEditShiftDialogOpen] = useState(false);
+  const [editingShift, setEditingShift] = useState<any>(null);
+  const [editShiftData, setEditShiftData] = useState({
+    name: '',
+    start_time: null as Date | null,
+    server_ids: [] as string[],
+  });
+
+  // Automatically update newShift's week_start_date when selectedDate changes
+  useEffect(() => {
+    setNewShift(prev => ({ ...prev, week_start_date: selectedDate }));
+  }, [selectedDate]);
 
   const [menuPortalTarget, setMenuPortalTarget] = useState<HTMLElement | null>(null);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
@@ -145,26 +179,68 @@ export default function ShiftsPage() {
   // Compute 7 days of the selected week (Monday to Sunday)
   const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(selectedDate, i));
 
+  // Keep track of dismissed weeks in React memory (resets on page reload/F5)
+  const dismissedWeeksRef = useRef<string[]>([]);
+
+  const dismissWeek = useCallback((weekStr: string) => {
+    if (!dismissedWeeksRef.current.includes(weekStr)) {
+      dismissedWeeksRef.current.push(weekStr);
+    }
+  }, []);
+
+  const handleCloseInitDialog = useCallback(() => {
+    const startStr = dialogWeekStr || format(selectedDate, 'yyyy-MM-dd');
+    dismissWeek(startStr);
+    setIsInitWeekDialogOpen(false);
+    setDialogWeekStr(null);
+  }, [selectedDate, dialogWeekStr, dismissWeek]);
+
   const fetchData = useCallback(async () => {
     try {
       const startStr = format(selectedDate, 'yyyy-MM-dd');
       const endStr = format(addDays(selectedDate, 6), 'yyyy-MM-dd');
 
+      // Check lock status
+      setIsCheckingWeekLock(true);
+      let isLockedVal = false;
+      try {
+        const lockRes = await apiFetch(`${API_URL}/payroll/lock-status?start_date=${startStr}&end_date=${endStr}`);
+        if (lockRes.ok) {
+          const lockData = await lockRes.json();
+          setIsWeekLocked(lockData.locked);
+          isLockedVal = lockData.locked;
+        }
+      } catch (err) {
+        console.error('Error checking week lock status:', err);
+      } finally {
+        setIsCheckingWeekLock(false);
+      }
+
       const [serversRes, shiftsRes, usersRes, assignRes] = await Promise.all([
         apiFetch(`${API_URL}/servers`),
-        apiFetch(`${API_URL}/shifts`),
+        apiFetch(`${API_URL}/shifts?week_start_date=${startStr}`),
         apiFetch(`${API_URL}/users`),
         apiFetch(`${API_URL}/shifts/assignments?start_date=${startStr}&end_date=${endStr}`)
       ]);
 
-      setServers(await serversRes.json());
-      setShifts(await shiftsRes.json());
-      setUsers(await usersRes.json());
-      setAssignments(await assignRes.json());
+      const sData = await serversRes.json();
+      const shData = await shiftsRes.json();
+      const uData = await usersRes.json();
+      const aData = await assignRes.json();
+
+      setServers(sData);
+      setShifts(shData);
+      setUsers(uData);
+      setAssignments(aData);
+
+      if (shData.length === 0 && activeTab === 'matrix' && !isLockedVal && !dismissedWeeksRef.current.includes(startStr)) {
+        setDialogWeekStr(startStr);
+        setIsInitWeekDialogOpen(true);
+      }
     } catch (e) {
       console.error('Failed to fetch scheduling data:', e);
     }
-  }, [API_URL, selectedDate]);
+  }, [API_URL, selectedDate, activeTab]);
 
   useEffect(() => {
     fetchData();
@@ -201,7 +277,7 @@ export default function ShiftsPage() {
 
   // Handle Shift CRUD
   const handleCreateShift = async () => {
-    if (newShift.server_ids.length === 0 || !newShift.start_time) return;
+    if (newShift.server_ids.length === 0 || !newShift.start_time || !newShift.week_start_date) return;
     try {
       const res = await apiFetch(`${API_URL}/shifts`, {
         method: 'POST',
@@ -211,6 +287,7 @@ export default function ShiftsPage() {
           name: newShift.name || undefined,
           start_time: format(newShift.start_time, 'HH:mm'),
           end_time: '',
+          week_start_date: format(newShift.week_start_date, 'yyyy-MM-dd'),
         })
       });
       if (res.ok) {
@@ -218,12 +295,89 @@ export default function ShiftsPage() {
           server_ids: [],
           name: '',
           start_time: setHours(setMinutes(new Date(), 0), 8),
+          week_start_date: selectedDate,
         });
         setIsShiftDialogOpen(false);
         fetchData();
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleEditShiftClick = (shift: any) => {
+    const [hours, minutes] = shift.start_time.split(':').map(Number);
+    const timeDate = setHours(setMinutes(new Date(), minutes), hours);
+    
+    const serverName = shift.server?.name || '';
+    let initialServerIds: string[] = [];
+    if (serverName.includes('+')) {
+      const names = serverName.split('+');
+      initialServerIds = servers
+        .filter((s: any) => names.includes(s.name))
+        .map((s: any) => s.id);
+    } else if (shift.server_id) {
+      initialServerIds = [shift.server_id];
+    }
+    
+    setEditingShift(shift);
+    setEditShiftData({
+      name: shift.name || '',
+      start_time: timeDate,
+      server_ids: initialServerIds,
+    });
+    setIsEditShiftDialogOpen(true);
+  };
+
+  const handleSaveShiftEdit = async () => {
+    if (!editingShift || !editShiftData.start_time || editShiftData.server_ids.length === 0) return;
+    try {
+      const res = await apiFetch(`${API_URL}/shifts/${editingShift.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editShiftData.name || null,
+          start_time: format(editShiftData.start_time, 'HH:mm'),
+          server_ids: editShiftData.server_ids,
+        })
+      });
+      if (res.ok) {
+        setIsEditShiftDialogOpen(false);
+        setEditingShift(null);
+        fetchData();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCloneWeek = async () => {
+    try {
+      const prevWeekDate = addDays(selectedDate, -7);
+      const fromWeekStr = format(prevWeekDate, 'yyyy-MM-dd');
+      const toWeekStr = format(selectedDate, 'yyyy-MM-dd');
+
+      const res = await apiFetch(`${API_URL}/shifts/clone-week`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from_week: fromWeekStr,
+          to_week: toWeekStr,
+        }),
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success) {
+          handleCloseInitDialog();
+          fetchData();
+        } else {
+          alert(result.message || 'Không có ca làm việc nào ở tuần trước để sao chép.');
+          handleCloseInitDialog();
+        }
+      }
+    } catch (e) {
+      console.error('Failed to clone week shifts:', e);
     }
   };
 
@@ -373,33 +527,46 @@ export default function ShiftsPage() {
           </div>
         </div>
 
+        {/* Global Week Toolbar (Visible for matrix and shifts tabs) */}
+        {activeTab !== 'servers' && (
+          <div className="space-y-4">
+            {isWeekLocked && (
+              <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 p-4 rounded-xl text-sm leading-relaxed font-sans">
+                <ShieldAlert className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-semibold block mb-0.5">⚠️ Chú ý: Tuần này đã chốt bảng lương!</strong>
+                  Các thao tác như thêm ca làm, phân công nhân sự, sửa/xóa ca trực, sao chép lịch từ tuần khác sẽ bị vô hiệu hóa để bảo vệ tính nhất quán dữ liệu lương. Vui lòng mở khóa bảng lương trong trang Payroll nếu bạn muốn điều chỉnh.
+                </div>
+              </div>
+            )}
+            <div className="relative z-40 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/50 border border-slate-800/80 p-4 rounded-xl backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-slate-400">Tuần phân ca:</span>
+              <DatePicker
+                selected={selectedDate}
+                onChange={(date: Date | null) => {
+                  if (date) setSelectedDate(startOfWeek(date, { weekStartsOn: 1 }));
+                }}
+                showWeekPicker
+                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 6), 'dd/MM')}`}
+                formatWeekDay={formatWeekDayLabel}
+                portalId="shift-week-datepicker-portal"
+                popperClassName="shift-week-datepicker-popper"
+                popperPlacement="bottom-start"
+                className="flex h-10 w-52 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-cyan-400 font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+              />
+            </div>
+
+            <div className="text-xs text-slate-500 font-mono">
+              Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Chủ Nhật ({format(weekDays[6], 'dd/MM')})
+            </div>
+          </div>
+          </div>
+        )}
+
         {/* TAB 1: MATRIX VIEW */}
         {activeTab === 'matrix' && (
           <div className="space-y-6">
-
-            {/* Top Toolbar */}
-            <div className="relative z-[60] flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/50 border border-slate-800/80 p-4 rounded-xl backdrop-blur-xl">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-slate-400">Tuần phân ca:</span>
-                <DatePicker
-                  selected={selectedDate}
-                  onChange={(date: Date | null) => {
-                    if (date) setSelectedDate(startOfWeek(date, { weekStartsOn: 1 }));
-                  }}
-                  showWeekPicker
-                  value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 6), 'dd/MM')}`}
-                  formatWeekDay={formatWeekDayLabel}
-                  portalId="shift-week-datepicker-portal"
-                  popperClassName="shift-week-datepicker-popper"
-                  popperPlacement="bottom-start"
-                  className="flex h-10 w-52 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-cyan-400 font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
-                />
-              </div>
-
-              <div className="text-xs text-slate-500 font-mono">
-                Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Chủ Nhật ({format(weekDays[6], 'dd/MM')})
-              </div>
-            </div>
 
             {/* Matrix Table */}
             <Card className={`transition-all duration-200 overflow-hidden shadow-2xl ${
@@ -517,7 +684,18 @@ export default function ShiftsPage() {
                         <TableBody>
                           {filteredShifts.map((shift: any) => (
                             <TableRow key={shift.id} className="group border-slate-800/60 hover:bg-slate-900/30 transition-colors">
-                              <TableCell className="sticky left-0 z-10 font-medium border-r border-slate-200 dark:border-slate-800/80 py-3 pr-4 bg-white dark:bg-slate-950 group-hover:bg-white dark:group-hover:bg-[#0f172a] transition-colors transform-gpu">
+                              <TableCell
+                                onContextMenu={(e) => {
+                                  if (isWeekLocked) return;
+                                  e.preventDefault();
+                                  setContextMenu({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    shift,
+                                  });
+                                }}
+                                className="sticky left-0 z-10 font-medium border-r border-slate-200 dark:border-slate-800/80 py-3 pr-4 bg-white dark:bg-slate-950 group-hover:bg-white dark:group-hover:bg-[#0f172a] transition-colors transform-gpu group/cell-header"
+                              >
                                 <div className="flex items-center justify-between gap-2 w-full">
                                   <div className="flex items-center gap-1.5 min-w-0">
                                     <span className="text-sm font-semibold text-cyan-600 dark:text-cyan-400 tracking-tight truncate">
@@ -529,10 +707,45 @@ export default function ShiftsPage() {
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded font-mono flex items-center gap-1 shrink-0">
-                                    <Clock className="w-3 h-3 text-cyan-500" />
-                                    {shift.start_time}
-                                  </span>
+                                  
+                                  {/* Action buttons shown on hover, otherwise show start_time */}
+                                  <div className="relative flex items-center shrink-0">
+                                    {/* Time Badge (hidden on hover) */}
+                                    <span className="group-hover/cell-header:opacity-0 transition-opacity duration-150 text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-cyan-500" />
+                                      {shift.start_time}
+                                    </span>
+                                    
+                                    {/* Edit/Delete Buttons (shown on hover) */}
+                                    {!isWeekLocked && (
+                                      <div className="absolute inset-y-0 right-0 flex items-center gap-1 opacity-0 pointer-events-none group-hover/cell-header:opacity-100 group-hover/cell-header:pointer-events-auto transition-opacity duration-150 bg-white dark:bg-[#0f172a] pl-2">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleEditShiftClick(shift);
+                                          }}
+                                          className="h-6 w-6 p-0 bg-slate-950 border-slate-800 text-slate-300 hover:text-cyan-400 hover:bg-slate-900 rounded active:scale-95"
+                                          title="Sửa ca"
+                                        >
+                                          <Edit2 className="w-3 h-3" />
+                                        </Button>
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteShift(shift.id);
+                                          }}
+                                          className="h-6 w-6 p-0 rounded active:scale-95"
+                                          title="Xóa ca"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </TableCell>
 
@@ -547,8 +760,12 @@ export default function ShiftsPage() {
                                 return (
                                   <TableCell
                                     key={idx}
-                                    onClick={() => handleCellClick(shift, day)}
-                                    className="text-center p-2 border-r border-slate-800/30 cursor-pointer hover:bg-cyan-500/5 transition-all relative group/cell min-h-[60px]"
+                                    onClick={() => !isWeekLocked && handleCellClick(shift, day)}
+                                    className={`text-center p-2 border-r border-slate-800/30 relative group/cell min-h-[60px] transition-all ${
+                                      isWeekLocked 
+                                        ? 'cursor-not-allowed bg-slate-900/5 dark:bg-slate-950/10' 
+                                        : 'cursor-pointer hover:bg-cyan-500/5'
+                                    }`}
                                   >
                                     {cellAssigns.length === 0 ? (
                                       <span className="text-xs text-red-500/40 font-semibold select-none group-hover/cell:text-cyan-400">x</span>
@@ -566,9 +783,11 @@ export default function ShiftsPage() {
                                       </div>
                                     )}
                                     {/* Quick edit overlay indicator */}
-                                    <div className="absolute right-1 bottom-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
-                                      <Edit2 className="w-3 h-3 text-cyan-400" />
-                                    </div>
+                                    {!isWeekLocked && (
+                                      <div className="absolute right-1 bottom-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
+                                        <Edit2 className="w-3 h-3 text-cyan-400" />
+                                      </div>
+                                    )}
                                   </TableCell>
                                 );
                               })}
@@ -667,6 +886,24 @@ export default function ShiftsPage() {
                 </div>
 
                 <div className="space-y-1.5 flex flex-col">
+                  <label className="text-xs text-slate-400 font-medium font-mono">CHỌN TUẦN CHO CA LÀM (*)</label>
+                  <DatePicker
+                    selected={newShift.week_start_date}
+                    onChange={(date: Date | null) => {
+                      if (date) {
+                        const monday = startOfWeek(date, { weekStartsOn: 1 });
+                        setNewShift({ ...newShift, week_start_date: monday });
+                      }
+                    }}
+                    showWeekPicker
+                    value={newShift.week_start_date ? `Tuần: ${format(newShift.week_start_date, 'dd/MM')} - ${format(addDays(newShift.week_start_date, 6), 'dd/MM')}` : ''}
+                    formatWeekDay={formatWeekDayLabel}
+                    popperClassName="z-50"
+                    className="flex h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+                  />
+                </div>
+
+                <div className="space-y-1.5 flex flex-col">
                   <label className="text-xs text-slate-400 font-medium font-mono">GIỜ BẮT ĐẦU CA (*)</label>
                   <DatePicker
                     selected={newShift.start_time}
@@ -682,10 +919,13 @@ export default function ShiftsPage() {
                   />
                 </div>
 
+                {isWeekLocked && (
+                  <p className="text-xs text-amber-500 font-mono text-center mb-2">Tuần được chọn đã chốt bảng lương. Không thể thêm ca.</p>
+                )}
                 <Button
                   onClick={handleCreateShift}
-                  disabled={newShift.server_ids.length === 0 || !newShift.start_time}
-                  className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold w-full h-10 rounded-lg transition-all active:scale-[0.98]"
+                  disabled={isWeekLocked || newShift.server_ids.length === 0 || !newShift.start_time || !newShift.week_start_date}
+                  className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold w-full h-10 rounded-lg transition-all active:scale-[0.98] disabled:opacity-55 disabled:cursor-not-allowed"
                 >
                   Thêm Khung Giờ
                 </Button>
@@ -706,6 +946,7 @@ export default function ShiftsPage() {
                     <Table>
                       <TableHeader className="bg-slate-100 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800">
                         <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-800">
+                          <TableHead className="text-slate-700 dark:text-slate-300 font-bold w-16">STT</TableHead>
                           <TableHead className="text-slate-700 dark:text-slate-300 font-bold">Server</TableHead>
                           <TableHead className="text-slate-700 dark:text-slate-300 font-bold">Mô tả ca</TableHead>
                           <TableHead className="text-slate-700 dark:text-slate-300 font-bold">Thời gian</TableHead>
@@ -713,8 +954,9 @@ export default function ShiftsPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {shifts.map((s: any) => (
+                        {shifts.map((s: any, index: number) => (
                           <TableRow key={s.id} className="border-slate-800/60 hover:bg-slate-800/30 transition-colors">
+                            <TableCell className="font-mono text-xs text-slate-500 font-semibold">{index + 1}</TableCell>
                             <TableCell className="font-semibold text-cyan-600 dark:text-cyan-400">{s.server?.name || 'N/A'}</TableCell>
                             <TableCell className="text-slate-300 font-medium">{s.name || '—'}</TableCell>
                             <TableCell className="font-mono text-xs text-slate-400 flex items-center gap-1 mt-3">
@@ -722,14 +964,26 @@ export default function ShiftsPage() {
                               {s.start_time}
                             </TableCell>
                             <TableCell className="text-right pr-6">
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleDeleteShift(s.id)}
-                                className="h-8 px-2.5 rounded-lg active:scale-95"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
+                              <div className="flex justify-end gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={isWeekLocked}
+                                  onClick={() => handleEditShiftClick(s)}
+                                  className="h-8 px-2.5 bg-slate-950 border-slate-800 text-slate-300 hover:text-cyan-400 hover:bg-slate-900 rounded-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  disabled={isWeekLocked}
+                                  onClick={() => handleDeleteShift(s.id)}
+                                  className="h-8 px-2.5 rounded-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -796,6 +1050,7 @@ export default function ShiftsPage() {
                     <Table>
                       <TableHeader className="bg-slate-100 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800">
                         <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-800">
+                          <TableHead className="text-slate-700 dark:text-slate-300 font-bold w-16">STT</TableHead>
                           <TableHead className="text-slate-700 dark:text-slate-300 font-bold">Tên Server</TableHead>
                           <TableHead className="text-slate-700 dark:text-slate-300 font-bold">Trạng thái</TableHead>
                           <TableHead className="text-slate-700 dark:text-slate-300 font-bold text-right pr-6">Thao tác</TableHead>
@@ -804,8 +1059,9 @@ export default function ShiftsPage() {
                       <TableBody>
                         {servers
                           .filter((s: any) => !s.name.includes('+'))
-                          .map((s: any) => (
+                          .map((s: any, index: number) => (
                             <TableRow key={s.id} className="border-slate-800/60 hover:bg-slate-800/30 transition-colors">
+                              <TableCell className="font-mono text-xs text-slate-500 font-semibold">{index + 1}</TableCell>
                               <TableCell className="font-semibold text-cyan-600 dark:text-cyan-400 font-mono text-sm">{s.name}</TableCell>
                               <TableCell>
                                 <Badge
@@ -904,6 +1160,176 @@ export default function ShiftsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* DIALOG: INITIALIZE WEEK MODAL */}
+        <Dialog 
+          open={isInitWeekDialogOpen} 
+          onOpenChange={(open) => {
+            if (!open) {
+              const startStr = dialogWeekStr || format(selectedDate, 'yyyy-MM-dd');
+              dismissWeek(startStr);
+              setDialogWeekStr(null);
+            }
+            setIsInitWeekDialogOpen(open);
+          }}
+        >
+          <DialogContent className="bg-slate-900 text-white border-slate-800 rounded-xl sm:max-w-[460px]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <Calendar className="w-5.5 h-5.5 text-cyan-400" /> Khởi Tạo Tuần Mới
+              </DialogTitle>
+              <DialogDescription className="text-slate-600 dark:text-slate-400 text-sm mt-1">
+                Tuần từ <strong className="text-slate-200">{dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''}</strong> đến <strong className="text-slate-200">{dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 6), 'dd/MM/yyyy') : ''}</strong> chưa được khởi tạo ca làm việc nào.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-4 text-sm text-slate-350 space-y-4 leading-relaxed">
+              <p className="text-slate-400">
+                Vui lòng chọn phương thức thiết lập lịch làm việc cho tuần này:
+              </p>
+              
+              <div className="space-y-3.5 bg-slate-950/40 p-4 border border-slate-800/60 rounded-xl">
+                <div className="flex gap-2.5 items-start">
+                  <div className="w-5 h-5 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">1</div>
+                  <div>
+                    <strong className="text-slate-100 font-semibold block text-sm">Kế thừa ca trực từ tuần trước:</strong>
+                    <span className="text-xs text-slate-400">Tự động sao chép toàn bộ danh sách ca làm (khung giờ + server) của tuần trước sang tuần này (các ô gán nhân sự sẽ để trống).</span>
+                  </div>
+                </div>
+                
+                <div className="flex gap-2.5 items-start border-t border-slate-800/60 pt-3.5">
+                  <div className="w-5 h-5 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">2</div>
+                  <div>
+                    <strong className="text-slate-100 font-semibold block text-sm">Bắt đầu tuần mới trống:</strong>
+                    <span className="text-xs text-slate-400">Tạo một tuần trống hoàn toàn để bạn tự thiết lập và thêm các khung giờ thủ công từ đầu.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:justify-between flex flex-col sm:flex-row">
+              <Button
+                variant="outline"
+                onClick={handleCloseInitDialog}
+                className="border-slate-800 text-slate-300 hover:bg-slate-850 hover:text-white rounded-lg h-10 px-4"
+              >
+                Bắt đầu tuần mới trống
+              </Button>
+              <Button
+                onClick={handleCloneWeek}
+                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98]"
+              >
+                Kế thừa ca trực từ tuần trước
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* DIALOG: EDIT SHIFT MODAL */}
+        <Dialog open={isEditShiftDialogOpen} onOpenChange={setIsEditShiftDialogOpen}>
+          <DialogContent className="bg-slate-900 text-white border-slate-800 rounded-xl sm:max-w-[460px]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <Edit2 className="w-5.5 h-5.5 text-cyan-400" /> Chỉnh Sửa Ca Làm Việc
+              </DialogTitle>
+              <DialogDescription className="text-slate-600 dark:text-slate-400 text-sm mt-1">
+                Cập nhật thông tin ca làm của Server <strong className="text-cyan-400">{editingShift?.server?.name}</strong>.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4 text-sm">
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-medium font-mono">CHỌN SERVER (*)</label>
+                <Select
+                  isMulti
+                  instanceId="edit-server-select"
+                  options={serverOptions}
+                  styles={selectStyles}
+                  placeholder="-- Chọn Server game (Có thể chọn nhiều) --"
+                  value={serverOptions.filter((o: any) => editShiftData.server_ids.includes(o.value))}
+                  onChange={(selectedOptions: any) => {
+                    const ids = selectedOptions ? selectedOptions.map((o: any) => o.value) : [];
+                    setEditShiftData({ ...editShiftData, server_ids: ids });
+                  }}
+                  menuPortalTarget={menuPortalTarget}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-medium font-mono">TÊN MÔ TẢ (TÙY CHỌN)</label>
+                <Input
+                  className="bg-slate-950 border-slate-800 text-white rounded-lg focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500 font-mono"
+                  placeholder="VD: Đêm chẵn, Ngày lẻ..."
+                  value={editShiftData.name}
+                  onChange={e => setEditShiftData({ ...editShiftData, name: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-1.5 flex flex-col">
+                <label className="text-xs text-slate-400 font-medium font-mono">GIỜ BẮT ĐẦU CA (*)</label>
+                <DatePicker
+                  selected={editShiftData.start_time}
+                  onChange={(date: Date | null) => setEditShiftData({ ...editShiftData, start_time: date })}
+                  showTimeSelect
+                  showTimeSelectOnly
+                  timeIntervals={15}
+                  timeCaption="Giờ"
+                  dateFormat="HH:mm"
+                  timeFormat="HH:mm"
+                  popperClassName="z-[9999]"
+                  className="flex h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEditShiftDialogOpen(false);
+                  setEditingShift(null);
+                }}
+                className="border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg h-10 px-4"
+              >
+                Hủy bỏ
+              </Button>
+              <Button
+                onClick={handleSaveShiftEdit}
+                disabled={!editShiftData.start_time || editShiftData.server_ids.length === 0}
+                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98]"
+              >
+                Lưu thay đổi
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Custom Context Menu */}
+        {contextMenu && (
+          <div
+            className="fixed bg-slate-900 border border-slate-800 text-slate-100 rounded-lg shadow-xl py-1 w-36 z-[9999]"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+          >
+            <button
+              onClick={() => {
+                handleEditShiftClick(contextMenu.shift);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-850 flex items-center gap-2 text-slate-200 hover:text-cyan-400"
+            >
+              <Edit2 className="w-3.5 h-3.5" /> Chỉnh sửa ca
+            </button>
+            <button
+              onClick={() => {
+                handleDeleteShift(contextMenu.shift.id);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-red-500/10 text-red-400 hover:text-red-300 flex items-center gap-2"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Xóa ca làm
+            </button>
+          </div>
+        )}
 
       </div>
     </div>

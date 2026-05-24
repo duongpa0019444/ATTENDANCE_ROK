@@ -12,8 +12,13 @@ export class ShiftsController {
   constructor(private readonly shiftsService: ShiftsService) {}
 
   @Get()
-  findAllShifts() {
-    return this.shiftsService.findAllShifts();
+  findAllShifts(@Query('week_start_date') weekStartDate?: string) {
+    return this.shiftsService.findAllShifts(weekStartDate);
+  }
+
+  @Post('clone-week')
+  cloneWeek(@Body() body: { from_week: string; to_week: string }) {
+    return this.shiftsService.cloneWeek(body.from_week, body.to_week);
   }
 
   @Post()

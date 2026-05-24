@@ -49,4 +49,42 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
       create: { key, value },
     });
   }
+
+  async isDateLocked(date: Date | string | null | undefined): Promise<boolean> {
+    if (!date) return false;
+    try {
+      const targetDate = new Date(date);
+      targetDate.setHours(0, 0, 0, 0);
+
+      const locked = await this.lockedPeriod.findFirst({
+        where: {
+          start_date: { lte: targetDate },
+          end_date: { gte: targetDate },
+        },
+      });
+      return !!locked;
+    } catch {
+      return false;
+    }
+  }
+
+  async isPeriodOverlappingLocked(start: Date | string, end: Date | string): Promise<boolean> {
+    try {
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(23, 59, 59, 999);
+
+      const locked = await this.lockedPeriod.findFirst({
+        where: {
+          start_date: { lte: endDate },
+          end_date: { gte: startDate },
+        },
+      });
+      return !!locked;
+    } catch {
+      return false;
+    }
+  }
 }
+

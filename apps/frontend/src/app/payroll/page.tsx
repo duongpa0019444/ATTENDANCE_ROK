@@ -10,7 +10,8 @@ import { apiFetch } from '@/lib/api';
 import { format, startOfMonth, parseISO } from 'date-fns';
 import {
   Calendar, Download, Settings, Save,
-  Server, Clock, Loader2, Sparkles, ArrowRight
+  Server, Clock, Loader2, Sparkles, ArrowRight,
+  Lock, Unlock, ShieldAlert
 } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -75,6 +76,28 @@ export default function PayrollPage() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedStaff, setSelectedStaff] = useState<PayrollRecord | null>(null);
 
+  const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [isCheckingLock, setIsCheckingLock] = useState<boolean>(false);
+  const [showLockConfirm, setShowLockConfirm] = useState<boolean>(false);
+  const [showUnlockConfirm, setShowUnlockConfirm] = useState<boolean>(false);
+  const [lockUnlockLoading, setLockUnlockLoading] = useState<boolean>(false);
+  const [lockedPeriodRange, setLockedPeriodRange] = useState<{ start: string; end: string } | null>(null);
+
+  // Helper to format date yyyy-MM-dd to dd/MM/yyyy
+  const formatDateVi = (dateStr: string) => {
+    if (!dateStr) return '';
+    const dateOnly = dateStr.split('T')[0];
+    const [year, month, day] = dateOnly.split('-');
+    if (year && month && day) {
+      return `${day}/${month}/${year}`;
+    }
+    try {
+      return format(parseISO(dateStr), 'dd/MM/yyyy');
+    } catch {
+      return dateStr;
+    }
+  };
+
   // Global Salary settings
   const [systemSettings, setSystemSettings] = useState({
     nightShift22_3Bonus: 10000,
@@ -94,6 +117,26 @@ export default function PayrollPage() {
   const [shiftBaseSalaryInput, setShiftBaseSalaryInput] = useState<string>('');
   const [shiftBonusSalaryInput, setShiftBonusSalaryInput] = useState<string>('');
 
+  const checkLockStatus = useCallback(async () => {
+    setIsCheckingLock(true);
+    try {
+      const res = await apiFetch(`${API_URL}/payroll/lock-status?start_date=${startDate}&end_date=${endDate}`);
+      if (res.ok) {
+        const data = await res.json();
+        setIsLocked(data.locked);
+        if (data.locked && data.startDate && data.endDate) {
+          setLockedPeriodRange({ start: data.startDate, end: data.endDate });
+        } else {
+          setLockedPeriodRange(null);
+        }
+      }
+    } catch (err) {
+      console.error('Error checking lock status:', err);
+    } finally {
+      setIsCheckingLock(false);
+    }
+  }, [startDate, endDate, API_URL]);
+
   const fetchPayroll = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -102,12 +145,69 @@ export default function PayrollPage() {
         const data = await res.json();
         setPayrollData(data);
       }
+      await checkLockStatus();
     } catch (err) {
       console.error('Error fetching payroll:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, API_URL]);
+  }, [startDate, endDate, API_URL, checkLockStatus]);
+
+  const handleLockPayroll = async () => {
+    setLockUnlockLoading(true);
+    try {
+      const res = await apiFetch(`${API_URL}/payroll/lock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date: startDate, end_date: endDate }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setShowLockConfirm(false);
+          await fetchPayroll();
+        } else {
+          alert(data.message || 'Không thể chốt bảng lương. Có lỗi xảy ra.');
+        }
+      } else {
+        alert('Không thể chốt bảng lương. Có lỗi xảy ra.');
+      }
+    } catch (err) {
+      console.error('Failed to lock payroll:', err);
+      alert('Lỗi kết nối khi chốt bảng lương.');
+    } finally {
+      setLockUnlockLoading(false);
+    }
+  };
+
+  const handleUnlockPayroll = async () => {
+    setLockUnlockLoading(true);
+    const unlockStart = lockedPeriodRange ? lockedPeriodRange.start : startDate;
+    const unlockEnd = lockedPeriodRange ? lockedPeriodRange.end : endDate;
+    try {
+      const res = await apiFetch(`${API_URL}/payroll/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date: unlockStart, end_date: unlockEnd }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setShowUnlockConfirm(false);
+          await fetchPayroll();
+        } else {
+          alert(data.message || 'Không thể mở khóa bảng lương. Có lỗi xảy ra.');
+        }
+      } else {
+        alert('Không thể mở khóa bảng lương. Có lỗi xảy ra.');
+      }
+    } catch (err) {
+      console.error('Failed to unlock payroll:', err);
+      alert('Lỗi kết nối khi mở khóa bảng lương.');
+    } finally {
+      setLockUnlockLoading(false);
+    }
+  };
 
   const fetchSettingsAndEntities = useCallback(async () => {
     try {
@@ -249,6 +349,15 @@ export default function PayrollPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tighter flex items-center gap-2">
               <span className="text-cyan-400">CYBER</span>_PAYROLL
+              {isLocked ? (
+                <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono text-[10px] tracking-wider py-0.5 px-2 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-emerald-400" /> ĐÃ CHỐT ({formatDateVi(lockedPeriodRange?.start || startDate)} - {formatDateVi(lockedPeriodRange?.end || endDate)})
+                </Badge>
+              ) : (
+                <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[10px] tracking-wider py-0.5 px-2 flex items-center gap-1">
+                  <Unlock className="w-3.5 h-3.5 text-amber-400" /> CHƯA CHỐT
+                </Badge>
+              )}
             </h1>
             <p className="text-slate-400 mt-1 text-sm">Hệ thống quản lý thù lao và cấu hình tự động</p>
           </div>
@@ -284,6 +393,22 @@ export default function PayrollPage() {
                 />
               </div>
             </div>
+            {isLocked ? (
+              <Button
+                onClick={() => setShowUnlockConfirm(true)}
+                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/35 text-red-400 font-semibold text-xs flex items-center gap-1.5 h-9 rounded-lg"
+              >
+                <Unlock className="w-4 h-4" /> Hủy chốt
+              </Button>
+            ) : (
+              <Button
+                onClick={() => setShowLockConfirm(true)}
+                disabled={payrollData.length === 0}
+                className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/35 text-emerald-400 font-semibold text-xs flex items-center gap-1.5 h-9 rounded-lg"
+              >
+                <Lock className="w-4 h-4" /> Chốt bảng lương
+              </Button>
+            )}
             <Button
               onClick={exportToCSV}
               disabled={payrollData.length === 0}
@@ -428,7 +553,17 @@ export default function PayrollPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="space-y-6">
+            {isLocked && (
+              <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 p-4 rounded-xl text-sm leading-relaxed font-sans">
+                <ShieldAlert className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-semibold block mb-0.5">⚠️ Chú ý: Giai đoạn này đã được chốt bảng lương!</strong>
+                  Mọi thay đổi đối với cấu hình thù lao chung hoặc thù lao của server bên dưới sẽ <strong>không áp dụng</strong> cho bảng lương của giai đoạn đã khóa (từ {formatDateVi(lockedPeriodRange?.start || startDate)} đến {formatDateVi(lockedPeriodRange?.end || endDate)}). Bạn cần mở khóa bảng lương trước nếu muốn tính toán lại.
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* System settings form */}
             <Card className="bg-slate-900/40 border-slate-850 backdrop-blur-xl lg:col-span-1 h-fit">
@@ -541,9 +676,11 @@ export default function PayrollPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {servers.map((server) => (
-                          <TableRow key={server.id} className="border-slate-850">
-                            <TableCell className="font-semibold text-slate-200">{server.name}</TableCell>
+                        {servers
+                          .filter((server: any) => !server.name.includes('+'))
+                          .map((server) => (
+                            <TableRow key={server.id} className="border-slate-850">
+                              <TableCell className="font-semibold text-slate-200">{server.name}</TableCell>
                             <TableCell className="text-right font-mono">
                               {editingServerId === server.id ? (
                                 <Input
@@ -592,9 +729,8 @@ export default function PayrollPage() {
                 </CardContent>
               </Card>
 
-
-
             </div>
+          </div>
           </div>
         )}
 
@@ -702,6 +838,81 @@ export default function PayrollPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Lock Confirmation Dialog */}
+      <Dialog open={showLockConfirm} onOpenChange={(open) => !lockUnlockLoading && setShowLockConfirm(open)}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-slate-50 max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-emerald-400">
+              <Lock className="w-5 h-5 text-emerald-400" />
+              Chốt Bảng Lương
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-xs mt-2">
+              Bạn có chắc chắn muốn chốt bảng lương từ ngày <strong className="text-slate-200">{formatDateVi(startDate)}</strong> đến <strong className="text-slate-200">{formatDateVi(endDate)}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 text-sm text-slate-300 leading-relaxed space-y-2 font-sans">
+            <p>Sau khi chốt:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Bảng lương sẽ được đóng băng cố định dựa trên thiết lập thù lao hiện tại.</li>
+              <li>Mọi thay đổi cấu hình thù lao hoặc cập nhật phân ca/điểm danh trong khoảng thời gian này sẽ <strong>không thể thực hiện</strong>.</li>
+            </ul>
+          </div>
+          <DialogFooter className="flex gap-2">
+            <Button
+              onClick={() => setShowLockConfirm(false)}
+              disabled={lockUnlockLoading}
+              className="bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs"
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={handleLockPayroll}
+              disabled={lockUnlockLoading}
+              className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs flex items-center gap-1.5"
+            >
+              {lockUnlockLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Xác Nhận Chốt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unlock Confirmation Dialog */}
+      <Dialog open={showUnlockConfirm} onOpenChange={(open) => !lockUnlockLoading && setShowUnlockConfirm(open)}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-slate-50 max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-red-400">
+              <Unlock className="w-5 h-5 text-red-400" />
+              Mở Khóa Bảng Lương
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-xs mt-2">
+              Bạn có chắc chắn muốn mở khóa bảng lương từ ngày <strong className="text-slate-200">{formatDateVi(lockedPeriodRange?.start || startDate)}</strong> đến <strong className="text-slate-200">{formatDateVi(lockedPeriodRange?.end || endDate)}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 text-sm text-slate-300 leading-relaxed font-sans">
+            Khi mở khóa, bảng lương sẽ quay lại trạng thái <strong>tính toán động</strong>. Bạn sẽ có thể điều chỉnh lịch phân ca, điểm danh và các thay đổi cấu hình thù lao sẽ có hiệu lực trực tiếp trên khoảng thời gian này.
+          </div>
+          <DialogFooter className="flex gap-2">
+            <Button
+              onClick={() => setShowUnlockConfirm(false)}
+              disabled={lockUnlockLoading}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={handleUnlockPayroll}
+              disabled={lockUnlockLoading}
+              className="bg-red-500 hover:bg-red-650 text-white font-semibold text-xs flex items-center gap-1.5"
+              style={{ backgroundColor: 'rgb(239, 68, 68)' }}
+            >
+              {lockUnlockLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Xác Nhận Mở
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
@@ -711,4 +922,3 @@ function BaseSalaryHead() {
     <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">LƯƠNG CƠ BẢN</TableHead>
   );
 }
-
