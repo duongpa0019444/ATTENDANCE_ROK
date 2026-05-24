@@ -259,7 +259,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="bg-slate-900 border-slate-800 text-slate-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-slate-400">Tổng ca hiện tại</CardTitle>
@@ -270,11 +270,11 @@ export default function AdminDashboard() {
           </Card>
           <Card className="bg-slate-900 border-slate-800 text-slate-50">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-400">Đã Check-in / Sẵn sàng</CardTitle>
+              <CardTitle className="text-sm font-medium text-slate-400">Đã Sẵn Sàng</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-green-400">
-                {staffList.filter((s) => s.status === 'CHECKED_IN' || s.status === 'READY').length}
+                {staffList.filter((s) => s.status === 'READY').length}
               </div>
             </CardContent>
           </Card>
@@ -285,24 +285,6 @@ export default function AdminDashboard() {
             <CardContent>
               <div className="text-3xl font-bold text-yellow-400">
                 {staffList.filter((s) => s.status === 'PENDING').length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-slate-900 border-red-900/50 text-slate-50 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-red-400">Cảnh báo / Trễ / Vắng</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-red-500">
-                {
-                  staffList.filter(
-                    (s) =>
-                      s.status === 'LATE' ||
-                      s.status === 'ABSENT' ||
-                      s.status === 'ABSENT_REQUESTED' ||
-                      s.status === 'LATE_REQUESTED'
-                  ).length
-                }
               </div>
             </CardContent>
           </Card>
@@ -397,29 +379,16 @@ export default function AdminDashboard() {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-400 font-mono">CẢNH BÁO ADMIN (PHÚT)</label>
-                        <Input
-                          type="number"
-                          value={unconfirmedWarningMinutes}
-                          onChange={(e) => setUnconfirmedWarningMinutes(Number(e.target.value))}
-                          required
-                          min={1}
-                          className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-slate-400 font-mono">GRACE CHECK-IN TRỄ (PHÚT)</label>
-                        <Input
-                          type="number"
-                          value={checkinGraceMinutes}
-                          onChange={(e) => setCheckinGraceMinutes(Number(e.target.value))}
-                          required
-                          min={1}
-                          className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
-                        />
-                      </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">CẢNH BÁO ADMIN (PHÚT)</label>
+                      <Input
+                        type="number"
+                        value={unconfirmedWarningMinutes}
+                        onChange={(e) => setUnconfirmedWarningMinutes(Number(e.target.value))}
+                        required
+                        min={1}
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
+                      />
                     </div>
 
                     {/* Dynamic explanation summary block */}
@@ -429,9 +398,6 @@ export default function AdminDashboard() {
                       </div>
                       <div>
                         • Admin nhận cảnh báo chưa xác nhận từ: <strong className="text-cyan-400">{unconfirmedWarningMinutes + preparationMinutes} phút</strong> trước ca.
-                      </div>
-                      <div>
-                        • Check-in hợp lệ trong vòng: <strong className="text-cyan-400">{checkinGraceMinutes} phút</strong> sau giờ bắt đầu ca (quá giờ tính đi trễ).
                       </div>
                     </div>
                   </div>

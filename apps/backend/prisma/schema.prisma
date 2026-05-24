@@ -97,9 +97,7 @@ model AttendanceLog {
   user_id             String
   shift_assignment_id String
   confirm_at          DateTime?
-  checkin_at          DateTime?
-  late_minutes        Int              @default(0)
-  status              String           @default("PENDING") // PENDING, CONFIRMED, CHECKED_IN, LATE, ABSENT
+  status              String           @default("PENDING") // PENDING, READY, ABSENT
   user                User             @relation(fields: [user_id], references: [id])
   shift_assignment    ShiftAssignment  @relation(fields: [shift_assignment_id], references: [id])
   escalation_logs     EscalationLog[]

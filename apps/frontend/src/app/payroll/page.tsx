@@ -7,11 +7,30 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api';
-import { format, startOfMonth } from 'date-fns';
+import { format, startOfMonth, parseISO } from 'date-fns';
 import {
   Calendar, Download, Settings, Save,
-  Server, Clock, Loader2, Sparkles
+  Server, Clock, Loader2, Sparkles, ArrowRight
 } from 'lucide-react';
+import DatePicker, { registerLocale } from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { vi } from 'date-fns/locale';
+
+registerLocale('vi', vi);
+
+const formatWeekDayLabel = (nameOfDay: string) => {
+  const cleanName = nameOfDay.toLowerCase().trim();
+  if (cleanName.includes('chủ nhật') || cleanName.includes('cn') || cleanName.includes('sun')) return 'CN';
+  if (cleanName.includes('th 2') || cleanName.includes('t2') || cleanName.includes('2') || cleanName.includes('hai')) return 'T2';
+  if (cleanName.includes('th 3') || cleanName.includes('t3') || cleanName.includes('3') || cleanName.includes('ba')) return 'T3';
+  if (cleanName.includes('th 4') || cleanName.includes('t4') || cleanName.includes('4') || cleanName.includes('tư') || cleanName.includes('tu')) return 'T4';
+  if (cleanName.includes('th 5') || cleanName.includes('t5') || cleanName.includes('5') || cleanName.includes('năm') || cleanName.includes('nam')) return 'T5';
+  if (cleanName.includes('th 6') || cleanName.includes('t6') || cleanName.includes('6') || cleanName.includes('sáu') || cleanName.includes('sau')) return 'T6';
+  if (cleanName.includes('th 7') || cleanName.includes('t7') || cleanName.includes('7') || cleanName.includes('bảy') || cleanName.includes('bay')) return 'T7';
+  return nameOfDay;
+};
+
+
 
 interface PayrollDetail {
   assignmentId: string;
@@ -234,21 +253,36 @@ export default function PayrollPage() {
             <p className="text-slate-400 mt-1 text-sm">Hệ thống quản lý thù lao và cấu hình tự động</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg">
-              <Calendar className="w-4 h-4 text-cyan-400" />
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="bg-transparent text-slate-100 text-xs border-none outline-none focus:ring-0 w-28"
-              />
-              <span className="text-slate-500 text-xs">đến</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="bg-transparent text-slate-100 text-xs border-none outline-none focus:ring-0 w-28"
-              />
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1.5 rounded-xl backdrop-blur-xl relative z-40">
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <DatePicker
+                  selected={startDate ? parseISO(startDate) : null}
+                  onChange={(date: Date | null) => {
+                    if (date) setStartDate(format(date, 'yyyy-MM-dd'));
+                  }}
+                  dateFormat="dd/MM/yyyy"
+                  locale="vi"
+                  formatWeekDay={formatWeekDayLabel}
+                  popperClassName="z-50"
+                  className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
+                />
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <DatePicker
+                  selected={endDate ? parseISO(endDate) : null}
+                  onChange={(date: Date | null) => {
+                    if (date) setEndDate(format(date, 'yyyy-MM-dd'));
+                  }}
+                  dateFormat="dd/MM/yyyy"
+                  locale="vi"
+                  formatWeekDay={formatWeekDayLabel}
+                  popperClassName="z-50"
+                  className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
+                />
+              </div>
             </div>
             <Button
               onClick={exportToCSV}
