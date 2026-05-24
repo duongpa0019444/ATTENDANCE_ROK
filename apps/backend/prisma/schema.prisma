@@ -50,11 +50,12 @@ model TelegramLinkToken {
 }
 
 model Server {
-  id         String   @id @default(uuid())
-  name       String   @unique
-  status     String   @default("ACTIVE")
-  created_at DateTime @default(now())
-  shifts     Shift[]
+  id          String   @id @default(uuid())
+  name        String   @unique
+  status      String   @default("ACTIVE")
+  base_salary Float    @default(0)
+  created_at  DateTime @default(now())
+  shifts      Shift[]
 
   @@map("servers")
 }
@@ -66,6 +67,8 @@ model Shift {
   start_time    String            // e.g. "08:00"
   end_time      String            // e.g. "17:00"
   grace_minutes Int               @default(5)
+  base_salary   Float?
+  bonus_salary  Float             @default(0)
   created_at    DateTime          @default(now())
   
   server        Server            @relation(fields: [server_id], references: [id], onDelete: Cascade)

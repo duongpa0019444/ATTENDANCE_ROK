@@ -17,13 +17,13 @@ export class ServersController {
 
   @Roles(Role.ADMIN, Role.MANAGER)
   @Post()
-  create(@Body() data: { name: string }) {
+  create(@Body() data: { name: string; base_salary?: number }) {
     return this.serversService.create(data);
   }
 
   @Roles(Role.ADMIN, Role.MANAGER)
   @Put(':id')
-  update(@Param('id') id: string, @Body() data: { name?: string; status?: string }) {
+  update(@Param('id') id: string, @Body() data: { name?: string; status?: string; base_salary?: number }) {
     return this.serversService.update(id, data);
   }
 

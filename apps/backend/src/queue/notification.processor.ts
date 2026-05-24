@@ -27,42 +27,11 @@ export class NotificationProcessor extends WorkerHost {
           data.dateStr
         );
         break;
-      case 'WARNING_T5':
-        await this.telegramService.sendT5Warning(
-          chatId,
-          data.startTime,
-          data.assignmentId,
-          data.dateStr
-        );
-        break;
-      case 'CHECKIN_T0':
-        await this.telegramService.sendT0Checkin(
-          chatId,
-          data.assignmentId
-        );
-        break;
-      case 'LATE_T5_ALERT':
-        await this.telegramService.sendLateT5Alert(
-          chatId,
-          data.staffName,
-          data.startTime,
-          data.assignmentId,
-          data.lateMinutes,
-          data.dateStr
-        );
-        break;
       case 'TEXT':
         await this.telegramService.sendMessage(chatId, data.message);
         break;
       default:
-        // Handle legacy jobs or raw payload
-        if (job.data.message) {
-          await this.telegramService.sendMessage(chatId, job.data.message);
-        } else if (type === 'REMINDER') {
-          await this.telegramService.sendReminder(chatId, data.shiftName, data.assignmentId, data.minutesLeft || 10, data.dateStr);
-        } else {
-          this.logger.warn(`Unknown job type: ${type}`);
-        }
+        this.logger.warn(`Unknown or disabled job type: ${type}`);
     }
   }
 }

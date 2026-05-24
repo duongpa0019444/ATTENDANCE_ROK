@@ -13,7 +13,7 @@ import Select from 'react-select';
 import DatePicker, { registerLocale, setDefaultLocale } from 'react-datepicker';
 import { format, addDays, startOfWeek, setHours, setMinutes, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { Calendar, Server as ServerIcon, Clock, Users, Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Calendar, Server as ServerIcon, Clock, Users, Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, ShieldAlert, X, Maximize2, Minimize2 } from 'lucide-react';
 
 registerLocale('vi', vi);
 setDefaultLocale('vi');
@@ -98,6 +98,9 @@ export default function ShiftsPage() {
   const [shifts, setShifts] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
+  const [selectedServerFilter, setSelectedServerFilter] = useState<string>('all');
+  const [selectedUserFilter, setSelectedUserFilter] = useState<string>('all');
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Selected Week Start Date (defaults to Monday of current week)
   const [selectedDate, setSelectedDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
@@ -124,6 +127,20 @@ export default function ShiftsPage() {
   useEffect(() => {
     setMenuPortalTarget(document.body);
   }, []);
+
+  useEffect(() => {
+    if (isFullscreen) {
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
 
   // Compute 7 days of the selected week (Monday to Sunday)
   const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(selectedDate, i));
@@ -288,6 +305,29 @@ export default function ShiftsPage() {
     .filter((s: any) => s.status === 'ACTIVE' && !s.name.includes('+'))
     .map((s: any) => ({ value: s.id, label: s.name }));
 
+  const filteredShifts = shifts.filter((shift: any) => {
+    // 1. Filter by Server
+    if (selectedServerFilter !== 'all' && String(shift.server_id) !== selectedServerFilter) {
+      return false;
+    }
+    
+    // 2. Filter by User/Staff
+    if (selectedUserFilter !== 'all') {
+      const hasAssignmentForUser = assignments.some((a: any) => {
+        const isSameShift = a.shift_id === shift.id;
+        const isSameUser = String(a.user_id) === selectedUserFilter;
+        const dateStr = format(new Date(a.work_date), 'yyyy-MM-dd');
+        const isInWeek = weekDays.some(day => format(day, 'yyyy-MM-dd') === dateStr);
+        return isSameShift && isSameUser && isInWeek;
+      });
+      if (!hasAssignmentForUser) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 p-6 font-sans selection:bg-cyan-500/30">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -310,7 +350,7 @@ export default function ShiftsPage() {
                 : 'text-slate-400 hover:text-slate-200'
                 }`}
             >
-              <Calendar className="w-4 h-4" /> Ma trận Phân ca
+              <Calendar className="w-4 h-4" />Quản lý Phân ca
             </button>
             <button
               onClick={() => setActiveTab('shifts')}
@@ -360,95 +400,181 @@ export default function ShiftsPage() {
             </div>
 
             {/* Matrix Table */}
-            <Card className="bg-slate-900/40 border-slate-800 backdrop-blur-xl overflow-hidden shadow-2xl">
-              <CardHeader className="pb-3 border-b border-slate-800/60">
-                <CardTitle className="text-lg font-bold text-slate-200 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-cyan-400" /> Bảng Phân Phối Ca Tuần
-                </CardTitle>
-                <CardDescription>Click vào từng ô giao nhau giữa Server/Ca và Ngày để phân ca cho nhân viên.</CardDescription>
+            <Card className={`transition-all duration-200 overflow-hidden shadow-2xl ${
+              isFullscreen
+                ? 'fixed inset-0 z-50 w-screen h-screen bg-white dark:bg-slate-950 border-none p-6 flex flex-col rounded-none'
+                : 'bg-slate-900/40 border border-slate-800 rounded-xl'
+            }`}>
+              <CardHeader className="pb-3 border-b border-slate-800/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg font-bold text-slate-200 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-cyan-400" /> Bảng Phân Phối Ca Tuần
+                  </CardTitle>
+                  <CardDescription>Click vào từng ô giao nhau giữa Server/Ca và Ngày để phân ca cho nhân viên.</CardDescription>
+                </div>
+                
+                {/* Filters */}
+                <div className="flex flex-wrap items-center gap-3 z-40">
+                  {/* Server Select Filter */}
+                  <div className="w-48 text-slate-900">
+                    <Select
+                      instanceId="matrix-server-filter"
+                      placeholder="Lọc theo Server"
+                      options={[
+                        { value: 'all', label: '⚡ Tất cả Server' },
+                        ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
+                      ]}
+                      styles={selectStyles}
+                      value={[
+                        { value: 'all', label: '⚡ Tất cả Server' },
+                        ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
+                      ].find(o => o.value === selectedServerFilter)}
+                      onChange={(opt: any) => setSelectedServerFilter(opt ? opt.value : 'all')}
+                      menuPortalTarget={menuPortalTarget}
+                    />
+                  </div>
+
+                  {/* Staff Select Filter */}
+                  <div className="w-52 text-slate-900">
+                    <Select
+                      instanceId="matrix-user-filter"
+                      placeholder="Lọc theo Nhân viên"
+                      options={[
+                        { value: 'all', label: '👤 Tất cả Nhân viên' },
+                        ...users.map((u: any) => ({ value: String(u.id), label: u.full_name }))
+                      ]}
+                      styles={selectStyles}
+                      value={[
+                        { value: 'all', label: '👤 Tất cả Nhân viên' },
+                        ...users.map((u: any) => ({ value: String(u.id), label: u.full_name }))
+                      ].find(o => o.value === selectedUserFilter)}
+                      onChange={(opt: any) => setSelectedUserFilter(opt ? opt.value : 'all')}
+                      menuPortalTarget={menuPortalTarget}
+                    />
+                  </div>
+
+                  {/* Clear Filters Button (only shows when filters are active) */}
+                  {(selectedServerFilter !== 'all' || selectedUserFilter !== 'all') && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setSelectedServerFilter('all');
+                        setSelectedUserFilter('all');
+                      }}
+                      className="h-10 px-3 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-1.5 transition-all text-xs font-semibold shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                      Xóa lọc
+                    </Button>
+                  )}
+
+                  {/* Fullscreen Toggle Button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="h-10 w-10 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-center transition-all shrink-0"
+                    title={isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
+                  >
+                    {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                  </Button>
+                </div>
               </CardHeader>
-              <CardContent className="p-0">
+              <CardContent className="p-0 flex-1 min-h-0">
                 {shifts.length === 0 ? (
                   <div className="text-center py-12 text-slate-500 space-y-3">
                     <ShieldAlert className="w-10 h-10 mx-auto text-slate-700" />
                     <p className="text-sm">Chưa có khung giờ/ca làm nào được tạo. Hãy sang tab **Quản lý Ca làm**.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader className="bg-slate-100 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800">
-                        <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-800">
-                          <TableHead className="w-56 text-slate-700 dark:text-slate-300 font-bold border-r border-slate-200 dark:border-slate-800/80">SERVER / CA LÀM</TableHead>
-                          {weekDays.map((day, index) => {
-                            const isToday = format(new Date(), 'yyyy-MM-dd') === format(day, 'yyyy-MM-dd');
-                            return (
-                              <TableHead key={index} className={`text-center font-bold min-w-[120px] ${isToday ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300' : 'text-slate-700 dark:text-slate-300'}`}>
-                                <div>{format(day, 'EEEE', { locale: vi }).replace('Thứ', 'T')}</div>
-                                <div className="text-xs font-mono mt-0.5 opacity-80">{format(day, 'dd/MM')}</div>
-                              </TableHead>
-                            );
-                          })}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {shifts.map((shift: any) => (
-                          <TableRow key={shift.id} className="border-slate-800/60 hover:bg-slate-900/30 transition-colors">
-                            {/* Row Headers (Server Name & Start Time) */}
-                            <TableCell className="font-medium border-r border-slate-800/80 py-3 pr-4">
-                              <div className="text-sm font-semibold text-cyan-600 dark:text-cyan-400 tracking-tight">
-                                {shift.server?.name || 'N/A'}
-                                {shift.name && (
-                                  <span className="text-xs font-normal text-slate-500 dark:text-slate-400 ml-1.5">
-                                    ({shift.name})
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-slate-400 font-mono mt-1 flex items-center gap-1.5">
-                                <Clock className="w-3 h-3 text-slate-500" />
-                                {shift.start_time}
-                              </div>
-                            </TableCell>
-
-                            {/* Cells (7 weekdays) */}
-                            {weekDays.map((day, idx) => {
-                              const dateStr = format(day, 'yyyy-MM-dd');
-                              // Find assignments for this specific shift on this specific date
-                              const cellAssigns = assignments.filter(
-                                (a: any) => a.shift_id === shift.id && format(new Date(a.work_date), 'yyyy-MM-dd') === dateStr
-                              );
-
+                  <div className={isFullscreen
+                    ? "[&_[data-slot=table-container]]:max-h-[calc(100vh-180px)] [&_[data-slot=table-container]]:overflow-auto"
+                    : "[&_[data-slot=table-container]]:max-h-[70vh] [&_[data-slot=table-container]]:overflow-auto"
+                  }>
+                    {filteredShifts.length === 0 ? (
+                      <div className="text-center py-16 text-slate-500 space-y-3 bg-white dark:bg-slate-950">
+                        <Users className="w-10 h-10 mx-auto text-slate-700" />
+                        <p className="text-sm font-mono">Không có ca làm nào khớp với bộ lọc hiện tại.</p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader className="bg-slate-100 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800">
+                          <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-800">
+                            <TableHead className="sticky left-0 top-0 z-30 w-56 text-slate-700 dark:text-slate-300 font-bold border-r border-slate-200 dark:border-slate-800/80 bg-slate-100 dark:bg-slate-950 transform-gpu">SERVER / CA LÀM</TableHead>
+                            {weekDays.map((day, index) => {
+                              const isToday = format(new Date(), 'yyyy-MM-dd') === format(day, 'yyyy-MM-dd');
                               return (
-                                <TableCell
-                                  key={idx}
-                                  onClick={() => handleCellClick(shift, day)}
-                                  className="text-center p-2 border-r border-slate-800/30 cursor-pointer hover:bg-cyan-500/5 transition-all relative group min-h-[60px]"
-                                >
-                                  {cellAssigns.length === 0 ? (
-                                    <span className="text-xs text-red-500/40 font-semibold select-none group-hover:text-cyan-400">x</span>
-                                  ) : (
-                                    <div className="flex flex-col gap-1 items-center justify-center">
-                                      {cellAssigns.map((a: any) => (
-                                        <Badge
-                                          key={a.id}
-                                          variant="outline"
-                                          className="bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60 text-cyan-800 dark:text-cyan-300 text-[11px] px-2 py-0.5 max-w-[140px] truncate"
-                                        >
-                                          {a.user?.full_name}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {/* Quick edit overlay indicator */}
-                                  <div className="absolute right-1 bottom-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Edit2 className="w-3 h-3 text-cyan-400" />
-                                  </div>
-                                </TableCell>
+                                <TableHead key={index} className={`sticky top-0 z-20 text-center font-bold min-w-[120px] transition-colors ${isToday ? 'bg-cyan-50 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-300' : 'bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-300'} transform-gpu`}>
+                                  <div>{format(day, 'EEEE', { locale: vi }).replace('Thứ', 'T')}</div>
+                                  <div className="text-xs font-mono mt-0.5 opacity-80">{format(day, 'dd/MM')}</div>
+                                </TableHead>
                               );
                             })}
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredShifts.map((shift: any) => (
+                            <TableRow key={shift.id} className="group border-slate-800/60 hover:bg-slate-900/30 transition-colors">
+                              <TableCell className="sticky left-0 z-10 font-medium border-r border-slate-200 dark:border-slate-800/80 py-3 pr-4 bg-white dark:bg-slate-950 group-hover:bg-white dark:group-hover:bg-[#0f172a] transition-colors transform-gpu">
+                                <div className="flex items-center justify-between gap-2 w-full">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className="text-sm font-semibold text-cyan-600 dark:text-cyan-400 tracking-tight truncate">
+                                      {shift.server?.name || 'N/A'}
+                                    </span>
+                                    {shift.name && (
+                                      <span className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate">
+                                        ({shift.name})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded font-mono flex items-center gap-1 shrink-0">
+                                    <Clock className="w-3 h-3 text-cyan-500" />
+                                    {shift.start_time}
+                                  </span>
+                                </div>
+                              </TableCell>
+
+                              {/* Cells (7 weekdays) */}
+                              {weekDays.map((day, idx) => {
+                                const dateStr = format(day, 'yyyy-MM-dd');
+                                // Find assignments for this specific shift on this specific date
+                                const cellAssigns = assignments.filter(
+                                  (a: any) => a.shift_id === shift.id && format(new Date(a.work_date), 'yyyy-MM-dd') === dateStr
+                                );
+
+                                return (
+                                  <TableCell
+                                    key={idx}
+                                    onClick={() => handleCellClick(shift, day)}
+                                    className="text-center p-2 border-r border-slate-800/30 cursor-pointer hover:bg-cyan-500/5 transition-all relative group/cell min-h-[60px]"
+                                  >
+                                    {cellAssigns.length === 0 ? (
+                                      <span className="text-xs text-red-500/40 font-semibold select-none group-hover/cell:text-cyan-400">x</span>
+                                    ) : (
+                                      <div className="flex flex-col gap-1 items-center justify-center">
+                                        {cellAssigns.map((a: any) => (
+                                          <Badge
+                                            key={a.id}
+                                            variant="outline"
+                                            className="bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60 text-cyan-800 dark:text-cyan-300 text-[11px] px-2 py-0.5 max-w-[140px] truncate"
+                                          >
+                                            {a.user?.full_name}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {/* Quick edit overlay indicator */}
+                                    <div className="absolute right-1 bottom-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
+                                      <Edit2 className="w-3 h-3 text-cyan-400" />
+                                    </div>
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -530,6 +656,11 @@ export default function ShiftsPage() {
                     placeholder="VD: Đêm chẵn, Ngày lẻ..."
                     value={newShift.name}
                     onChange={e => setNewShift({ ...newShift, name: e.target.value })}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newShift.server_ids.length > 0 && newShift.start_time) {
+                        handleCreateShift();
+                      }
+                    }}
                   />
                 </div>
 
@@ -631,6 +762,11 @@ export default function ShiftsPage() {
                     onChange={e => {
                       const val = e.target.value.replace(/\D/g, '');
                       setNewServerName(val);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newServerName.trim()) {
+                        handleCreateServer();
+                      }
                     }}
                   />
                 </div>

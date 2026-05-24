@@ -87,7 +87,7 @@ export default function GuidePage() {
                   <p>
                     Quản lý vận hành toàn bộ hệ thống thông qua Web Dashboard chính. Khi nhân sự thực hiện xác nhận ca hoặc check-in vị trí trên Telegram Bot, thông tin sẽ được truyền trực tiếp về Web theo thời gian thực (Realtime) bằng công nghệ Socket.
                   </p>
-                  <div className="bg-slate-950/50 border border-slate-850 p-3 rounded-lg flex items-start gap-2 text-xs">
+                  <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-lg flex items-start gap-2 text-xs">
                     <Info className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
                     <span className="text-slate-400">
                       Hệ thống tự động quét ca làm việc mỗi phút một lần thông qua Cron Job để kích hoạt quy trình gửi tin nhắn, báo trễ, và ghi nhận vi phạm.

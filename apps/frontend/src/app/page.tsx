@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Activity, Clock, AlertTriangle, CheckCircle2, Terminal, MapPin, Save, Loader2 } from 'lucide-react';
+import { Activity, Clock, AlertTriangle, CheckCircle2, Terminal, MapPin, Save, Loader2, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useAttendanceStore, AttendanceStatus } from '@/store/useAttendanceStore';
@@ -22,10 +22,14 @@ export default function AdminDashboard() {
   const [time, setTime] = useState('');
   const [alerts, setAlerts] = useState<RealtimeAlert[]>([]);
 
-  // Geolocation configuration states
+  // Geolocation & operations configuration states
   const [latitude, setLatitude] = useState<number>(21.028511);
   const [longitude, setLongitude] = useState<number>(105.804817);
   const [radiusMeters, setRadiusMeters] = useState<number>(100);
+  const [reminderMinutes, setReminderMinutes] = useState<number>(10);
+  const [preparationMinutes, setPreparationMinutes] = useState<number>(0);
+  const [unconfirmedWarningMinutes, setUnconfirmedWarningMinutes] = useState<number>(5);
+  const [checkinGraceMinutes, setCheckinGraceMinutes] = useState<number>(5);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -51,7 +55,7 @@ export default function AdminDashboard() {
         const res = await apiFetch(`${API_URL}/shifts/assignments`);
         if (!res.ok) throw new Error('Failed to fetch assignments');
         const data = await res.json();
-        
+
         // Map assignments to Staff interface
         const mapped = data.map((a: any) => {
           const log = a.attendance_logs?.[0];
@@ -60,7 +64,7 @@ export default function AdminDashboard() {
             id: a.id,
             userId: a.user_id,
             name: a.user.full_name,
-            shift: `${serverName} (${a.shift.start_time} - ${a.shift.end_time})`,
+            shift: `${serverName} (${a.shift.start_time})`,
             status: (log?.status || 'PENDING') as AttendanceStatus,
             lateMinutes: log?.late_minutes || 0,
           };
@@ -79,6 +83,10 @@ export default function AdminDashboard() {
           setLatitude(data.latitude);
           setLongitude(data.longitude);
           setRadiusMeters(data.radiusMeters);
+          setReminderMinutes(data.reminderMinutes ?? 10);
+          setPreparationMinutes(data.preparationMinutes ?? 0);
+          setUnconfirmedWarningMinutes(data.unconfirmedWarningMinutes ?? 5);
+          setCheckinGraceMinutes(data.checkinGraceMinutes ?? 5);
         }
       } catch (err) {
         console.error('Error fetching settings:', err);
@@ -92,7 +100,7 @@ export default function AdminDashboard() {
     socket.connect();
 
     socket.on('attendance-updated', (data) => {
-      updateStaffStatus(data.userId, data.status);
+      updateStaffStatus(data.assignmentId || data.userId, data.status);
       addAlert(
         data.status,
         `Nhân sự [${data.name}] cập nhật trạng thái thành: ${data.status}`
@@ -100,7 +108,7 @@ export default function AdminDashboard() {
     });
 
     socket.on('attendance-late', (data) => {
-      updateStaffStatus(data.userId, 'LATE');
+      updateStaffStatus(data.assignmentId || data.userId, 'LATE');
       addAlert(
         'LATE',
         `🚨 ESCALATION LEVEL 2: Nhân sự [${data.name}] trễ ca [${data.shift}]!`
@@ -208,10 +216,14 @@ export default function AdminDashboard() {
           latitude: Number(latitude),
           longitude: Number(longitude),
           radiusMeters: Number(radiusMeters),
+          reminderMinutes: Number(reminderMinutes),
+          preparationMinutes: Number(preparationMinutes),
+          unconfirmedWarningMinutes: Number(unconfirmedWarningMinutes),
+          checkinGraceMinutes: Number(checkinGraceMinutes),
         }),
       });
       if (res.ok) {
-        setSettingsMessage({ type: 'success', text: 'Cập nhật tọa độ văn phòng thành công!' });
+        setSettingsMessage({ type: 'success', text: 'Cập nhật cấu hình hệ thống thành công!' });
         setTimeout(() => setSettingsMessage(null), 3000);
       } else {
         setSettingsMessage({ type: 'error', text: 'Cập nhật thất bại. Vui lòng thử lại.' });
@@ -348,56 +360,88 @@ export default function AdminDashboard() {
           <div className="space-y-6">
             {/* Office Settings Card */}
             <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-slate-200">
-                  <MapPin className="w-5 h-5 text-cyan-400" />
-                  Cấu hình Tọa độ Văn phòng
+              <CardHeader className="border-b border-slate-800/60 pb-3">
+                <CardTitle className="flex items-center gap-2 text-slate-200 text-base">
+                  <Settings className="w-5 h-5 text-cyan-400" />
+                  Cấu hình Hệ thống & Vận hành
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-4">
                 <form onSubmit={handleSaveSettings} className="space-y-4 text-sm">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs text-slate-400 font-mono">VĨ ĐỘ (LATITUDE)</label>
-                      <Input
-                        type="number"
-                        step="any"
-                        value={latitude}
-                        onChange={(e) => setLatitude(Number(e.target.value))}
-                        required
-                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
-                      />
+
+
+                  {/* Cấu hình nhắc lịch */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-semibold text-cyan-400 font-mono tracking-wider uppercase">🔔 Thời gian & Nhắc lịch Tele</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-mono">NHẮC NV TRƯỚC CA (PHÚT)</label>
+                        <Input
+                          type="number"
+                          value={reminderMinutes}
+                          onChange={(e) => setReminderMinutes(Number(e.target.value))}
+                          required
+                          min={1}
+                          className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-mono">TG CHUẨN BỊ THÊM (PHÚT)</label>
+                        <Input
+                          type="number"
+                          value={preparationMinutes}
+                          onChange={(e) => setPreparationMinutes(Number(e.target.value))}
+                          required
+                          min={0}
+                          className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs text-slate-400 font-mono">KINH ĐỘ (LONGITUDE)</label>
-                      <Input
-                        type="number"
-                        step="any"
-                        value={longitude}
-                        onChange={(e) => setLongitude(Number(e.target.value))}
-                        required
-                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
-                      />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-mono">CẢNH BÁO ADMIN (PHÚT)</label>
+                        <Input
+                          type="number"
+                          value={unconfirmedWarningMinutes}
+                          onChange={(e) => setUnconfirmedWarningMinutes(Number(e.target.value))}
+                          required
+                          min={1}
+                          className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 font-mono">GRACE CHECK-IN TRỄ (PHÚT)</label>
+                        <Input
+                          type="number"
+                          value={checkinGraceMinutes}
+                          onChange={(e) => setCheckinGraceMinutes(Number(e.target.value))}
+                          required
+                          min={1}
+                          className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs text-slate-400 font-mono">BÁN KÍNH KIỂM TRA (RADIUS IN METERS)</label>
-                    <Input
-                      type="number"
-                      value={radiusMeters}
-                      onChange={(e) => setRadiusMeters(Number(e.target.value))}
-                      required
-                      className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
-                    />
+
+                    {/* Dynamic explanation summary block */}
+                    <div className="p-2.5 bg-slate-950/40 border border-slate-850 rounded text-[11px] text-slate-400 font-sans space-y-1 leading-relaxed">
+                      <div>
+                        • NV nhận tin nhắc chuẩn bị ca từ: <strong className="text-cyan-400">{reminderMinutes + preparationMinutes} phút</strong> trước ca.
+                      </div>
+                      <div>
+                        • Admin nhận cảnh báo chưa xác nhận từ: <strong className="text-cyan-400">{unconfirmedWarningMinutes + preparationMinutes} phút</strong> trước ca.
+                      </div>
+                      <div>
+                        • Check-in hợp lệ trong vòng: <strong className="text-cyan-400">{checkinGraceMinutes} phút</strong> sau giờ bắt đầu ca (quá giờ tính đi trễ).
+                      </div>
+                    </div>
                   </div>
 
                   {settingsMessage && (
                     <div
-                      className={`p-2 rounded text-xs border ${
-                        settingsMessage.type === 'success'
+                      className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
                           ? 'bg-green-500/10 border-green-500/20 text-green-400'
                           : 'bg-red-500/10 border-red-500/20 text-red-400'
-                      }`}
+                        }`}
                     >
                       {settingsMessage.text}
                     </div>
@@ -416,7 +460,7 @@ export default function AdminDashboard() {
                     ) : (
                       <>
                         <Save className="w-3.5 h-3.5" />
-                        Lưu cấu hình GPS
+                        Lưu cấu hình hệ thống
                       </>
                     )}
                   </Button>

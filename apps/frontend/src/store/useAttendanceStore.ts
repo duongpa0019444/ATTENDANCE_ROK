@@ -20,14 +20,14 @@ export interface Staff {
 
 interface AttendanceState {
   staffList: Staff[];
-  updateStaffStatus: (userId: string, status: AttendanceStatus, extra?: Partial<Staff>) => void;
+  updateStaffStatus: (id: string, status: AttendanceStatus, extra?: Partial<Staff>) => void;
   setStaffList: (list: Staff[]) => void;
 }
 
 export const useAttendanceStore = create<AttendanceState>((set) => ({
   staffList: [],
-  updateStaffStatus: (userId, status, extra = {}) => set((state) => ({
-    staffList: state.staffList.map(s => s.userId === userId ? { ...s, status, ...extra } : s)
+  updateStaffStatus: (id, status, extra = {}) => set((state) => ({
+    staffList: state.staffList.map(s => s.id === id ? { ...s, status, ...extra } : s)
   })),
   setStaffList: (list) => set({ staffList: list }),
 }));

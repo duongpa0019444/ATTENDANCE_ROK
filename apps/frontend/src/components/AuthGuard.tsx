@@ -108,6 +108,18 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const getMenuClass = (path: string) => {
+    return pathname === path
+      ? "text-sm font-semibold text-cyan-400 transition-colors border-b-2 border-cyan-400 pb-0.5"
+      : "text-sm font-medium text-slate-300 hover:text-white transition-colors";
+  };
+
+  const getMobileMenuClass = (path: string) => {
+    return pathname === path
+      ? "text-sm font-semibold text-cyan-400 bg-slate-800/40 px-3 py-2.5 rounded-lg transition-all border-l-2 border-cyan-400 pl-2"
+      : "text-sm font-medium text-slate-300 hover:text-cyan-400 hover:bg-slate-800/40 px-3 py-2.5 rounded-lg transition-all";
+  };
+
   return isAuthenticated ? (
     <>
       <nav className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-4 sm:px-6 py-4 flex justify-between items-center sticky top-0 z-50">
@@ -116,10 +128,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             ROK_SCHEDULE
           </a>
           <div className="hidden md:flex gap-6 items-center">
-            <a href="/" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Dashboard</a>
-            <a href="/users" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Nhân Sự</a>
-            <a href="/shifts" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Phân Ca</a>
-            <a href="/guide" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">Hướng Dẫn</a>
+            <a href="/" className={getMenuClass('/')}>Dashboard</a>
+            <a href="/users" className={getMenuClass('/users')}>Nhân Sự</a>
+            <a href="/shifts" className={getMenuClass('/shifts')}>Phân Ca</a>
+            <a href="/payroll" className={getMenuClass('/payroll')}>Bảng Lương</a>
+            <a href="/guide" className={getMenuClass('/guide')}>Hướng Dẫn</a>
           </div>
         </div>
 
@@ -194,28 +207,35 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             <a 
               href="/" 
               onClick={() => setIsMobileMenuOpen(false)}
-              className="text-sm font-medium text-slate-300 hover:text-cyan-400 hover:bg-slate-800/40 px-3 py-2.5 rounded-lg transition-all"
+              className={getMobileMenuClass('/')}
             >
               Dashboard
             </a>
             <a 
               href="/users" 
               onClick={() => setIsMobileMenuOpen(false)}
-              className="text-sm font-medium text-slate-300 hover:text-cyan-400 hover:bg-slate-800/40 px-3 py-2.5 rounded-lg transition-all"
+              className={getMobileMenuClass('/users')}
             >
               Nhân Sự
             </a>
             <a 
               href="/shifts" 
               onClick={() => setIsMobileMenuOpen(false)}
-              className="text-sm font-medium text-slate-300 hover:text-cyan-400 hover:bg-slate-800/40 px-3 py-2.5 rounded-lg transition-all"
+              className={getMobileMenuClass('/shifts')}
             >
               Phân Ca
             </a>
             <a 
+              href="/payroll" 
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={getMobileMenuClass('/payroll')}
+            >
+              Bảng Lương
+            </a>
+            <a 
               href="/guide" 
               onClick={() => setIsMobileMenuOpen(false)}
-              className="text-sm font-medium text-slate-300 hover:text-cyan-400 hover:bg-slate-800/40 px-3 py-2.5 rounded-lg transition-all"
+              className={getMobileMenuClass('/guide')}
             >
               Hướng Dẫn
             </a>

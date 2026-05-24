@@ -45,7 +45,16 @@ export class SchedulerService {
       },
     });
 
-    this.logger.debug(`Found ${assignments.length} assignments in scan window.`);
+    const reminderMinutes = parseInt(await this.prisma.getSetting('REMINDER_MINUTES', '10'), 10);
+    const prepMinutes = parseInt(await this.prisma.getSetting('PREPARATION_MINUTES', '0'), 10);
+    const unconfirmedWarningMinutes = parseInt(await this.prisma.getSetting('UNCONFIRMED_WARNING_MINUTES', '5'), 10);
+    const checkinGraceMinutes = parseInt(await this.prisma.getSetting('CHECKIN_GRACE_MINUTES', '5'), 10);
+
+    const totalReminderStart = reminderMinutes + prepMinutes;
+    const totalReminderEnd = 1 + prepMinutes;
+    const totalWarningMins = unconfirmedWarningMinutes + prepMinutes;
+
+    this.logger.debug(`Found ${assignments.length} assignments in scan window. Config: reminder=${reminderMinutes}, prep=${prepMinutes}, warning=${unconfirmedWarningMinutes}, grace=${checkinGraceMinutes}`);
 
     for (const assignment of assignments) {
       if (!assignment.user.telegram_id) continue;
@@ -87,8 +96,8 @@ export class SchedulerService {
       const diffMs = shiftStart.getTime() - now.getTime();
       const diffMins = Math.round(diffMs / 60000);
 
-      // 1. T-10 to T-1 mins (Remind every minute if still PENDING, excluding T-5 warning)
-      if (diffMins >= 1 && diffMins <= 10 && diffMins !== 5) {
+      // 1. Reminder window (from totalReminderStart down to totalReminderEnd, excluding warning time)
+      if (diffMins >= totalReminderEnd && diffMins <= totalReminderStart && diffMins !== totalWarningMins) {
         if (log.status === 'PENDING') {
           await this.sendNotificationIfNew(
             assignment.user_id,
@@ -103,32 +112,16 @@ export class SchedulerService {
                 endTime: assignment.shift.end_time,
                 dateStr,
                 assignmentId: assignment.id,
-                minutesLeft: diffMins,
+                minutesLeft: diffMins - prepMinutes,
               },
             }
           );
         }
       }
 
-      // 2. T -5 (Warning & Escalation L1)
-      if (diffMins === 5) {
+      // 2. T -warning (Escalation L1 to admin if employee did not confirm)
+      if (diffMins === totalWarningMins) {
         if (log.status === 'PENDING') {
-          // Warning to staff
-          await this.sendNotificationIfNew(
-            assignment.user_id,
-            'WARNING_T5',
-            assignment.id,
-            {
-              type: 'WARNING_T5',
-              chatId: assignment.user.telegram_id,
-              data: {
-                startTime: assignment.shift.start_time,
-                dateStr,
-                assignmentId: assignment.id,
-              },
-            }
-          );
-
           // Escalation Level 1
           const existingEsc = await this.prisma.escalationLog.findFirst({
             where: { attendance_id: log.id, level: 1 },
@@ -139,7 +132,7 @@ export class SchedulerService {
             });
 
             // Alert manager via Telegram
-            const alertMsg = `⚠️ CẢNH BÁO LEVEL 1: Nhân sự [${assignment.user.full_name}] chưa xác nhận ca làm [${shiftDisplayName}] ngày ${dateStr} (bắt đầu lúc ${assignment.shift.start_time}).`;
+            const alertMsg = `⚠️ CẢNH BÁO: Nhân sự [${assignment.user.full_name}] chưa xác nhận ca làm [${shiftDisplayName}] ngày ${dateStr} (bắt đầu lúc ${assignment.shift.start_time}).`;
             await this.queueManagersNotification(alertMsg);
 
             // Realtime Socket warning event
@@ -149,102 +142,6 @@ export class SchedulerService {
               shift: shiftDisplayName,
               level: 1,
             });
-          }
-        }
-      }
-
-      // 3. T +0 (Check-in Prompt)
-      if (diffMins === 0) {
-        if (['PENDING', 'READY'].includes(log.status)) {
-          await this.sendNotificationIfNew(
-            assignment.user_id,
-            'CHECKIN_T0',
-            assignment.id,
-            {
-              type: 'CHECKIN_T0',
-              chatId: assignment.user.telegram_id,
-              data: {
-                assignmentId: assignment.id,
-              },
-            }
-          );
-        }
-      }
-
-      // 4. T +5 (Late Logged & Escalation L2)
-      // 4. Tardiness & Escalation L2 check
-      let shouldTriggerLate = false;
-      let lateMinutes = 5;
-
-      if (diffMins === -5) {
-        if (!['CHECKED_IN', 'ABSENT', 'ABSENT_REQUESTED', 'LATE'].includes(log.status)) {
-          shouldTriggerLate = true;
-          lateMinutes = 5;
-        }
-      }
-
-      if (shouldTriggerLate) {
-        if (!['CHECKED_IN', 'ABSENT', 'ABSENT_REQUESTED'].includes(log.status)) {
-          const sent = await this.sendNotificationIfNew(
-            assignment.user_id,
-            `LATE_T${Math.abs(diffMins)}`,
-            assignment.id,
-            {
-              type: 'TEXT',
-              chatId: assignment.user.telegram_id,
-              data: {
-                message: `❌ Bạn đã bị ghi nhận đi trễ cho ca [${shiftDisplayName}] ngày ${dateStr}.`,
-              },
-            }
-          );
-
-          if (sent) {
-            // Update DB Status to LATE
-            if (log.status !== 'LATE') {
-              await this.prisma.attendanceLog.update({
-                where: { id: log.id },
-                data: {
-                  status: 'LATE',
-                  late_minutes: lateMinutes,
-                },
-              });
-
-              // Emit update socket
-              this.realtimeGateway.notifyDashboard('attendance-updated', {
-                id: log.id,
-                userId: assignment.user_id,
-                name: assignment.user.full_name,
-                shift: `${shiftDisplayName} (${assignment.shift.start_time}${assignment.shift.end_time ? ` - ${assignment.shift.end_time}` : ''})`,
-                status: 'LATE',
-              });
-            }
-
-            // Escalation Level 2
-            const existingEsc = await this.prisma.escalationLog.findFirst({
-              where: { attendance_id: log.id, level: 2 },
-            });
-            if (!existingEsc) {
-              await this.prisma.escalationLog.create({
-                data: { attendance_id: log.id, level: 2 },
-              });
-
-              // Send Late alerts to managers
-              await this.queueManagersLateAlert(
-                assignment.user.full_name,
-                assignment.shift.start_time,
-                assignment.id,
-                lateMinutes,
-                dateStr
-              );
-
-              // Realtime Socket late event
-              this.realtimeGateway.notifyDashboard('attendance-late', {
-                userId: assignment.user_id,
-                name: assignment.user.full_name,
-                shift: shiftDisplayName,
-                level: 2,
-              });
-            }
           }
         }
       }
@@ -293,30 +190,6 @@ export class SchedulerService {
           type: 'TEXT',
           chatId: mgr.telegram_id,
           data: { message },
-        });
-      }
-    }
-  }
-
-  private async queueManagersLateAlert(staffName: string, startTime: string, assignmentId: string, lateMinutes: number, dateStr: string) {
-    const managers = await this.prisma.user.findMany({
-      where: {
-        role: { in: ['ADMIN', 'MANAGER'] },
-        telegram_id: { not: null },
-      },
-    });
-    for (const mgr of managers) {
-      if (mgr.telegram_id) {
-        await this.queueService.addNotificationJob({
-          type: 'LATE_T5_ALERT',
-          chatId: mgr.telegram_id,
-          data: {
-            staffName,
-            startTime,
-            assignmentId,
-            lateMinutes,
-            dateStr,
-          },
         });
       }
     }

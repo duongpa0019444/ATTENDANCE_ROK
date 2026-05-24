@@ -36,21 +36,54 @@ export class AppController {
       'OFFICE_RADIUS_METERS',
       this.configService.get<string>('OFFICE_RADIUS_METERS') || '100'
     );
+    const reminderMins = await this.prisma.getSetting('REMINDER_MINUTES', '10');
+    const prepMins = await this.prisma.getSetting('PREPARATION_MINUTES', '0');
+    const unconfirmedWarningMins = await this.prisma.getSetting('UNCONFIRMED_WARNING_MINUTES', '5');
+    const checkinGraceMins = await this.prisma.getSetting('CHECKIN_GRACE_MINUTES', '5');
 
     return {
       latitude: parseFloat(lat),
       longitude: parseFloat(lng),
       radiusMeters: parseFloat(radius),
+      reminderMinutes: parseInt(reminderMins, 10),
+      preparationMinutes: parseInt(prepMins, 10),
+      unconfirmedWarningMinutes: parseInt(unconfirmedWarningMins, 10),
+      checkinGraceMinutes: parseInt(checkinGraceMins, 10),
     };
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.MANAGER)
   @Post('api/settings')
-  async updateSettings(@Body() body: { latitude: number; longitude: number; radiusMeters: number }) {
+  async updateSettings(
+    @Body()
+    body: {
+      latitude: number;
+      longitude: number;
+      radiusMeters: number;
+      reminderMinutes?: number;
+      preparationMinutes?: number;
+      unconfirmedWarningMinutes?: number;
+      checkinGraceMinutes?: number;
+    },
+  ) {
     await this.prisma.setSetting('OFFICE_LATITUDE', body.latitude.toString());
     await this.prisma.setSetting('OFFICE_LONGITUDE', body.longitude.toString());
     await this.prisma.setSetting('OFFICE_RADIUS_METERS', body.radiusMeters.toString());
+
+    if (body.reminderMinutes !== undefined) {
+      await this.prisma.setSetting('REMINDER_MINUTES', body.reminderMinutes.toString());
+    }
+    if (body.preparationMinutes !== undefined) {
+      await this.prisma.setSetting('PREPARATION_MINUTES', body.preparationMinutes.toString());
+    }
+    if (body.unconfirmedWarningMinutes !== undefined) {
+      await this.prisma.setSetting('UNCONFIRMED_WARNING_MINUTES', body.unconfirmedWarningMinutes.toString());
+    }
+    if (body.checkinGraceMinutes !== undefined) {
+      await this.prisma.setSetting('CHECKIN_GRACE_MINUTES', body.checkinGraceMinutes.toString());
+    }
+
     return { success: true };
   }
 }

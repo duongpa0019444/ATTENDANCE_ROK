@@ -13,6 +13,7 @@ import { UsersModule } from './users/users.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { AuthModule } from './auth/auth.module';
 import { ServersModule } from './servers/servers.module';
+import { PayrollModule } from './payroll/payroll.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ServersModule } from './servers/servers.module';
     ShiftsModule,
     AuthModule,
     ServersModule,
+    PayrollModule,
   ],
   controllers: [AppController],
   providers: [AppService],
