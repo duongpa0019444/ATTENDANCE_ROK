@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class PayrollService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async calculatePayroll(startDateStr: string, endDateStr: string) {
+  async calculatePayroll(startDateStr: string, endDateStr: string, userId?: string) {
     const startDate = new Date(startDateStr);
     const endDate = new Date(endDateStr);
     endDate.setHours(23, 59, 59, 999);
@@ -28,6 +28,7 @@ export class PayrollService {
           gte: startDate,
           lte: endDate,
         },
+        ...(userId ? { user_id: userId } : {}),
       },
       include: {
         user: true,

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Delete, Param, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Delete, Param, UseGuards, Query, Request } from '@nestjs/common';
 import { ShiftsService } from './shifts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -34,6 +34,20 @@ export class ShiftsController {
   @Get('assignments')
   getAssignments(@Query() query?: any) {
     return this.shiftsService.getAssignments(query);
+  }
+
+  @Get('my-assignments')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.STAFF)
+  getMyAssignments(
+    @Request() req: any,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.shiftsService.getAssignments({
+      start_date: startDate,
+      end_date: endDate,
+      user_id: req.user.userId,
+    });
   }
 
   @Post('sync-assignments')

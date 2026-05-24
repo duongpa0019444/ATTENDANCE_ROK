@@ -81,12 +81,17 @@ export class ShiftsService {
         }
       });
 
-      // Auto create AttendanceLog with PENDING status
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isPastDate = workDate < today;
+
+      // Auto create AttendanceLog with READY status if in the past, otherwise PENDING
       await this.prisma.attendanceLog.create({
         data: {
           user_id: data.user_id,
           shift_assignment_id: assignment.id,
-          status: 'PENDING'
+          status: isPastDate ? 'READY' : 'PENDING',
+          confirm_at: isPastDate ? new Date() : null,
         }
       });
 
@@ -96,13 +101,16 @@ export class ShiftsService {
     return results;
   }
   
-  async getAssignments(query?: { start_date?: string; end_date?: string }) {
+  async getAssignments(query?: { start_date?: string; end_date?: string; user_id?: string }) {
     const where: any = {};
     if (query?.start_date && query?.end_date) {
       where.work_date = {
         gte: new Date(query.start_date),
         lte: new Date(query.end_date),
       };
+    }
+    if (query?.user_id) {
+      where.user_id = query.user_id;
     }
     return this.prisma.shiftAssignment.findMany({
       where,
@@ -228,6 +236,9 @@ export class ShiftsService {
 
   async syncAssignments(data: { shift_id: string; work_date: string; user_ids: string[] }) {
     const workDate = new Date(data.work_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isPastDate = workDate < today;
     const targetUserIds = data.user_ids || [];
 
     return this.prisma.$transaction(async (tx) => {
@@ -287,7 +298,8 @@ export class ShiftsService {
           data: {
             user_id: userId,
             shift_assignment_id: assignment.id,
-            status: 'PENDING',
+            status: isPastDate ? 'READY' : 'PENDING',
+            confirm_at: isPastDate ? new Date() : null,
           }
         });
 

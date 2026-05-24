@@ -21,7 +21,7 @@ export class AppController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN, Role.MANAGER, Role.STAFF)
   @Get('api/settings')
   async getSettings() {
     const lat = await this.prisma.getSetting(

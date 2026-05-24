@@ -41,15 +41,19 @@ export default function LoginPage() {
         throw new Error(data.message || 'Tài khoản hoặc mật khẩu không chính xác.');
       }
 
-      if (data.user.role !== 'ADMIN' && data.user.role !== 'MANAGER') {
-        throw new Error('Bạn không có quyền truy cập trang quản trị.');
+      if (data.user.role !== 'ADMIN' && data.user.role !== 'MANAGER' && data.user.role !== 'STAFF') {
+        throw new Error('Tài khoản không được phân quyền truy cập.');
       }
 
       localStorage.setItem('token', data.accessToken);
       localStorage.setItem('user', JSON.stringify(data.user));
 
-      // Redirect to main dashboard
-      router.push('/');
+      // Redirect based on role
+      if (data.user.role === 'STAFF') {
+        router.push('/staff');
+      } else {
+        router.push('/');
+      }
     } catch (err: any) {
       setError(err.message || 'Không thể kết nối đến hệ thống.');
     } finally {
@@ -164,7 +168,7 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-6 text-[10px] text-center text-slate-600 border-t border-slate-800/60 pt-4">
-              <span>Hệ thống chỉ dành cho Ban Quản trị & Điều hành.</span>
+              <span>Hệ thống chấm công và phân lịch làm việc ROK.</span>
             </div>
           </CardContent>
         </Card>

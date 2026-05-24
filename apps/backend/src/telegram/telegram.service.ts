@@ -157,6 +157,31 @@ export class TelegramService implements OnModuleInit {
       return;
     }
 
+    if (log.status === 'READY') {
+      await ctx.reply(`ℹ️ Ca làm này đã được bạn xác nhận trước đó.`);
+      await ctx.answerCbQuery();
+      return;
+    }
+
+    const assignment = log.shift_assignment;
+    const workDate = new Date(assignment.work_date);
+    const [hours, minutes] = assignment.shift.start_time.split(':').map(Number);
+    const shiftStart = new Date(
+      workDate.getUTCFullYear(),
+      workDate.getUTCMonth(),
+      workDate.getUTCDate(),
+      hours,
+      minutes,
+      0
+    );
+
+    const now = new Date();
+    if (now > shiftStart) {
+      await ctx.reply(`❌ Không thể xác nhận ca làm này vì ca làm đã bắt đầu hoặc đã qua thời gian xác nhận.`);
+      await ctx.answerCbQuery();
+      return;
+    }
+
     const updatedLog = await this.prisma.attendanceLog.update({
       where: { id: log.id },
       data: {

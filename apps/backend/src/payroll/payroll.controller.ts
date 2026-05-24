@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -20,6 +20,20 @@ export class PayrollController {
       throw new Error('Missing start_date or end_date');
     }
     return this.payrollService.calculatePayroll(startDate, endDate);
+  }
+
+  @Get('my-payroll')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.STAFF)
+  async getMyPayroll(
+    @Request() req: any,
+    @Query('start_date') startDate: string,
+    @Query('end_date') endDate: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new Error('Missing start_date or end_date');
+    }
+    const result = await this.payrollService.calculatePayroll(startDate, endDate, req.user.userId);
+    return result[0] || null;
   }
 
   @Get('settings')

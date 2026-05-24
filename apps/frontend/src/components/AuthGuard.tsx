@@ -10,6 +10,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [userRole, setUserRole] = useState<string>('');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
@@ -45,6 +46,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           if (user.role === 'ADMIN' || user.role === 'MANAGER') {
             router.push('/');
             return;
+          } else if (user.role === 'STAFF') {
+            router.push('/staff');
+            return;
           }
         } catch (e) {
           localStorage.removeItem('token');
@@ -62,12 +66,29 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     try {
       const user = JSON.parse(userJson);
-      if (user.role !== 'ADMIN' && user.role !== 'MANAGER') {
+      if (user.role !== 'ADMIN' && user.role !== 'MANAGER' && user.role !== 'STAFF') {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         router.push('/login');
         return;
       }
+      
+      setUserRole(user.role);
+
+      // Routing restrictions
+      const isStaffRoute = pathname.startsWith('/staff');
+      const isAdminRoute = pathname !== '/login' && pathname !== '/guide' && !isStaffRoute;
+
+      if (user.role === 'STAFF' && isAdminRoute) {
+        router.push('/staff');
+        return;
+      }
+
+      if ((user.role === 'ADMIN' || user.role === 'MANAGER') && isStaffRoute) {
+        router.push('/');
+        return;
+      }
+
       setIsAuthenticated(true);
     } catch (e) {
       localStorage.removeItem('token');
@@ -99,12 +120,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
-  const getAdminName = () => {
+  const getUserName = () => {
     try {
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      return user.full_name || 'Admin';
+      return user.full_name || 'User';
     } catch {
-      return 'Admin';
+      return 'User';
     }
   };
 
@@ -124,15 +145,24 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     <>
       <nav className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-4 sm:px-6 py-4 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-6">
-          <a href="/" className="text-cyan-400 font-bold tracking-wider hover:text-cyan-300 mr-2 sm:mr-4">
+          <a href={userRole === 'STAFF' ? "/staff" : "/"} className="text-cyan-400 font-bold tracking-wider hover:text-cyan-300 mr-2 sm:mr-4">
             ROK_SCHEDULE
           </a>
           <div className="hidden md:flex gap-6 items-center">
-            <a href="/" className={getMenuClass('/')}>Dashboard</a>
-            <a href="/users" className={getMenuClass('/users')}>Nhân Sự</a>
-            <a href="/shifts" className={getMenuClass('/shifts')}>Phân Ca</a>
-            <a href="/payroll" className={getMenuClass('/payroll')}>Bảng Lương</a>
-            <a href="/guide" className={getMenuClass('/guide')}>Hướng Dẫn</a>
+            {userRole === 'STAFF' ? (
+              <>
+                <a href="/staff" className={getMenuClass('/staff')}>Lịch & Bảng Lương</a>
+                <a href="/guide" className={getMenuClass('/guide')}>Hướng Dẫn</a>
+              </>
+            ) : (
+              <>
+                <a href="/" className={getMenuClass('/')}>Dashboard</a>
+                <a href="/users" className={getMenuClass('/users')}>Nhân Sự</a>
+                <a href="/shifts" className={getMenuClass('/shifts')}>Phân Ca</a>
+                <a href="/payroll" className={getMenuClass('/payroll')}>Bảng Lương</a>
+                <a href="/guide" className={getMenuClass('/guide')}>Hướng Dẫn</a>
+              </>
+            )}
           </div>
         </div>
 
@@ -146,7 +176,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-cyan-400" />}
           </button>
           <span className="text-xs text-slate-400 font-mono uppercase tracking-wider bg-slate-800/50 border border-slate-700/50 px-2.5 py-1 rounded">
-            🟢 {getAdminName()}
+            🟢 {getUserName()}
           </span>
           <button
             onClick={handleLogout}
@@ -204,41 +234,62 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
           {/* Navigation Links */}
           <div className="flex flex-col gap-2">
-            <a 
-              href="/" 
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={getMobileMenuClass('/')}
-            >
-              Dashboard
-            </a>
-            <a 
-              href="/users" 
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={getMobileMenuClass('/users')}
-            >
-              Nhân Sự
-            </a>
-            <a 
-              href="/shifts" 
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={getMobileMenuClass('/shifts')}
-            >
-              Phân Ca
-            </a>
-            <a 
-              href="/payroll" 
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={getMobileMenuClass('/payroll')}
-            >
-              Bảng Lương
-            </a>
-            <a 
-              href="/guide" 
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={getMobileMenuClass('/guide')}
-            >
-              Hướng Dẫn
-            </a>
+            {userRole === 'STAFF' ? (
+              <>
+                <a 
+                  href="/staff" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/staff')}
+                >
+                  Lịch & Bảng Lương
+                </a>
+                <a 
+                  href="/guide" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/guide')}
+                >
+                  Hướng Dẫn
+                </a>
+              </>
+            ) : (
+              <>
+                <a 
+                  href="/" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/')}
+                >
+                  Dashboard
+                </a>
+                <a 
+                  href="/users" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/users')}
+                >
+                  Nhân Sự
+                </a>
+                <a 
+                  href="/shifts" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/shifts')}
+                >
+                  Phân Ca
+                </a>
+                <a 
+                  href="/payroll" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/payroll')}
+                >
+                  Bảng Lương
+                </a>
+                <a 
+                  href="/guide" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/guide')}
+                >
+                  Hướng Dẫn
+                </a>
+              </>
+            )}
           </div>
         </div>
 
@@ -247,7 +298,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           <div className="flex flex-col gap-1.5 px-3">
             <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Đăng nhập với vai trò</span>
             <span className="text-xs text-slate-300 font-mono uppercase tracking-wider bg-slate-800/50 border border-slate-700/50 px-2.5 py-1.5 rounded w-full text-center">
-              🟢 {getAdminName()}
+              🟢 {getUserName()}
             </span>
           </div>
           <button
