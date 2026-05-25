@@ -176,8 +176,30 @@ export default function ShiftsPage() {
     };
   }, [isFullscreen]);
 
-  // Compute 7 days of the selected week (Monday to Sunday)
-  const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(selectedDate, i));
+    // Compute 8 days: from Monday of selected week to Monday of next week
+  const weekDays = Array.from({ length: 8 }).map((_, i) => addDays(selectedDate, i));
+  
+    // Helper: check if a shift+date combo belongs to the current week (7AM Mon -> 6:59AM next Mon)
+  const isShiftInCurrentWeek = useCallback((shift: any, day: Date): boolean => {
+    const weekStartMon = selectedDate;
+    const nextWeekMon = addDays(weekStartMon, 7);
+    
+    // Get shift start time in hours and minutes
+    const [sh, sm] = (shift.start_time || '00:00').split(':').map(Number);
+    
+    // The cell's "effective start" = day at shift start time
+    const cellDate = new Date(day);
+    cellDate.setHours(sh, sm, 0, 0);
+    
+    // Week boundaries: 7:00 AM
+    const weekStart = new Date(weekStartMon);
+    weekStart.setHours(7, 0, 0, 0);
+    
+    const weekEnd = new Date(nextWeekMon);
+    weekEnd.setHours(7, 0, 0, 0);
+    
+    return cellDate >= weekStart && cellDate < weekEnd;
+  }, [selectedDate]);
 
   // Keep track of dismissed weeks in React memory (resets on page reload/F5)
   const dismissedWeeksRef = useRef<string[]>([]);
@@ -198,7 +220,7 @@ export default function ShiftsPage() {
   const fetchData = useCallback(async () => {
     try {
       const startStr = format(selectedDate, 'yyyy-MM-dd');
-      const endStr = format(addDays(selectedDate, 6), 'yyyy-MM-dd');
+      const endStr = format(addDays(selectedDate, 7), 'yyyy-MM-dd');
 
       // Check lock status
       setIsCheckingWeekLock(true);
@@ -548,7 +570,7 @@ export default function ShiftsPage() {
                   if (date) setSelectedDate(startOfWeek(date, { weekStartsOn: 1 }));
                 }}
                 showWeekPicker
-                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 6), 'dd/MM')}`}
+                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 7), 'dd/MM')}`}
                 formatWeekDay={formatWeekDayLabel}
                 portalId="shift-week-datepicker-portal"
                 popperClassName="shift-week-datepicker-popper"
@@ -558,7 +580,7 @@ export default function ShiftsPage() {
             </div>
 
             <div className="text-xs text-slate-500 font-mono">
-              Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Chủ Nhật ({format(weekDays[6], 'dd/MM')})
+              Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Thứ 2 sau ({format(weekDays[7], 'dd/MM')}) (7h sáng → 6h59 sáng hôm sau)
             </div>
           </div>
           </div>
@@ -749,9 +771,11 @@ export default function ShiftsPage() {
                                 </div>
                               </TableCell>
 
-                              {/* Cells (7 weekdays) */}
+                                                            {/* Cells (8 days: Mon → next Mon) */}
                               {weekDays.map((day, idx) => {
                                 const dateStr = format(day, 'yyyy-MM-dd');
+                                const isCellInCurrentWeek = isShiftInCurrentWeek(shift, day);
+                                
                                 // Find assignments for this specific shift on this specific date
                                 const cellAssigns = assignments.filter(
                                   (a: any) => a.shift_id === shift.id && format(new Date(a.work_date), 'yyyy-MM-dd') === dateStr
@@ -760,14 +784,22 @@ export default function ShiftsPage() {
                                 return (
                                   <TableCell
                                     key={idx}
-                                    onClick={() => !isWeekLocked && handleCellClick(shift, day)}
+                                    onClick={() => {
+                                      if (isWeekLocked) return;
+                                      if (!isCellInCurrentWeek) return;
+                                      handleCellClick(shift, day);
+                                    }}
                                     className={`text-center p-2 border-r border-slate-800/30 relative group/cell min-h-[60px] transition-all ${
                                       isWeekLocked 
                                         ? 'cursor-not-allowed bg-slate-900/5 dark:bg-slate-950/10' 
+                                        : !isCellInCurrentWeek
+                                        ? 'cursor-not-allowed bg-slate-900/30 dark:bg-slate-950/30 opacity-50'
                                         : 'cursor-pointer hover:bg-cyan-500/5'
                                     }`}
                                   >
-                                    {cellAssigns.length === 0 ? (
+                                    {!isCellInCurrentWeek ? (
+                                      <span className="text-xs text-slate-600 font-semibold select-none">—</span>
+                                    ) : cellAssigns.length === 0 ? (
                                       <span className="text-xs text-red-500/40 font-semibold select-none group-hover/cell:text-cyan-400">x</span>
                                     ) : (
                                       <div className="flex flex-col gap-1 items-center justify-center">
@@ -783,7 +815,7 @@ export default function ShiftsPage() {
                                       </div>
                                     )}
                                     {/* Quick edit overlay indicator */}
-                                    {!isWeekLocked && (
+                                    {!isWeekLocked && isCellInCurrentWeek && (
                                       <div className="absolute right-1 bottom-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
                                         <Edit2 className="w-3 h-3 text-cyan-400" />
                                       </div>
@@ -896,7 +928,7 @@ export default function ShiftsPage() {
                       }
                     }}
                     showWeekPicker
-                    value={newShift.week_start_date ? `Tuần: ${format(newShift.week_start_date, 'dd/MM')} - ${format(addDays(newShift.week_start_date, 6), 'dd/MM')}` : ''}
+                    value={newShift.week_start_date ? `Tuần: ${format(newShift.week_start_date, 'dd/MM')} - ${format(addDays(newShift.week_start_date, 7), 'dd/MM')}` : ''}
                     formatWeekDay={formatWeekDayLabel}
                     popperClassName="z-50"
                     className="flex h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
@@ -1179,7 +1211,7 @@ export default function ShiftsPage() {
                 <Calendar className="w-5.5 h-5.5 text-cyan-400" /> Khởi Tạo Tuần Mới
               </DialogTitle>
               <DialogDescription className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-                Tuần từ <strong className="text-slate-200">{dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''}</strong> đến <strong className="text-slate-200">{dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 6), 'dd/MM/yyyy') : ''}</strong> chưa được khởi tạo ca làm việc nào.
+                Tuần từ <strong className="text-slate-200">{dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''}</strong> đến <strong className="text-slate-200">{dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 7), 'dd/MM/yyyy') : ''}</strong> chưa được khởi tạo ca làm việc nào.
               </DialogDescription>
             </DialogHeader>
 
