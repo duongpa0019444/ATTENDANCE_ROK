@@ -1,0 +1,42 @@
+﻿                  onChange={(date: Date | null) => setWeekDate(date ? startOfWeek(date, { weekStartsOn: 1 }) : null)}
+                  showWeekPicker
+                  value={weekDate ? `Tuần: ${format(weekDate, 'dd/MM')} - ${format(addDays(weekDate, 6), 'dd/MM')}` : '-- Chọn tuần --'}
+                  formatWeekDay={formatWeekDayLabel}
+                  popperClassName="z-50"
+                  isClearable
+                  placeholderText="Tuần"
+                  className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-28 text-center cursor-pointer hover:text-cyan-400 transition-colors"
+                />
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+              {/* Month Picker */}
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <DatePicker
+                  selected={monthDate}
+                  onChange={(date: Date | null) => setMonthDate(date ? startOfMonth(date) : null)}
+                  showMonthYearPicker
+                  dateFormat="MM/yyyy"
+                  value={monthDate ? `Tháng: ${format(monthDate, 'MM/yyyy')}` : '-- Chọn tháng --'}
+                  formatWeekDay={formatWeekDayLabel}
+                  popperClassName="z-50"
+                  isClearable
+                  placeholderText="Tháng"
+                  locale="vi"
+                  className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-28 text-center cursor-pointer hover:text-cyan-400 transition-colors"
+                />
+              </div>
+              {/* Clear filters button */}
+              {(weekDate || monthDate) && (
+                <button
+                  onClick={() => {
+                    setWeekDate(startOfWeek(new Date(), { weekStartsOn: 1 }));
+                    setMonthDate(null);
+                  }}
+                  className="text-red-400 hover:text-red-300 text-[10px] px-1.5 py-0.5 rounded hover:bg-red-500/10 transition-colors"
+                  title="Đặt lại"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
