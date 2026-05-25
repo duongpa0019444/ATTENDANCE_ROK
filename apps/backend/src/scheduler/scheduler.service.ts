@@ -139,8 +139,9 @@ export class SchedulerService {
             this.realtimeGateway.notifyDashboard('attendance-warning', {
               userId: assignment.user_id,
               name: assignment.user.full_name,
-              shift: shiftDisplayName,
-              level: 1,
+              serverName: assignment.shift.server?.name || assignment.shift.name || 'N/A',
+              startTime: assignment.shift.start_time,
+              dateStr,
             });
           }
         }

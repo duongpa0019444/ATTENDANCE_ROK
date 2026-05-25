@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -72,6 +72,7 @@ export class PayrollService {
           let totalBaseSalary = 0;
           let totalNightBonus = 0;
           let totalWeekendBonus = 0;
+          let totalOtherAllowance = 0;
           let totalShiftReward = 0;
           let totalSalary = 0;
 
@@ -84,6 +85,7 @@ export class PayrollService {
               totalBaseSalary += d.baseSalary || 0;
               totalNightBonus += d.nightBonus || 0;
               totalWeekendBonus += d.weekendBonus || 0;
+              totalOtherAllowance += d.otherAllowance || 0;
               totalShiftReward += d.shiftReward || 0;
               totalSalary += d.totalSalary || 0;
             }
@@ -100,6 +102,7 @@ export class PayrollService {
             totalBaseSalary,
             totalNightBonus,
             totalWeekendBonus,
+            totalOtherAllowance,
             totalShiftReward,
             totalSalary,
             details,
@@ -118,6 +121,18 @@ export class PayrollService {
     const bonusNight3_7 = parseFloat(rawNight3_7);
     const bonusWeekend = parseFloat(rawWeekend);
     const defaultSalary = parseFloat(rawDefaultSalary);
+
+    const allowanceDates = await this.prisma.payrollAllowance.findMany({
+      where: {
+        work_date: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+    });
+    const allowanceByDate = new Map(
+      allowanceDates.map((allowance) => [this.formatDateOnly(allowance.work_date), allowance.amount]),
+    );
 
     // Fetch shift assignments
     const assignments = await this.prisma.shiftAssignment.findMany({
@@ -149,13 +164,8 @@ export class PayrollService {
       const user = assignment.user;
       const log = assignment.attendance_logs?.[0];
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const workDate = new Date(assignment.work_date);
-      workDate.setHours(0, 0, 0, 0);
-
-      // Chỉ cần được phân ca và đã qua ngày đó là được tính
-      const isCompleted = workDate < today;
+      // A shift is counted for payroll as soon as staff is assigned to it.
+      const isCompleted = true;
 
       if (!userPayrollMap.has(user.id)) {
         userPayrollMap.set(user.id, {
@@ -169,6 +179,7 @@ export class PayrollService {
           totalBaseSalary: 0,
           totalNightBonus: 0,
           totalWeekendBonus: 0,
+          totalOtherAllowance: 0,
           totalShiftReward: 0,
           totalSalary: 0,
           details: [],
@@ -186,6 +197,7 @@ export class PayrollService {
       let baseSalary = 0;
       let nightBonus = 0;
       let weekendBonus = 0;
+      let appliedOtherAllowance = 0;
       let shiftReward = 0;
       let totalSalary = 0;
 
@@ -220,16 +232,18 @@ export class PayrollService {
           weekendBonus = bonusWeekend;
         }
 
-        // 4. Shift Reward
+        // 4. Date-specific allowance
+        appliedOtherAllowance = allowanceByDate.get(this.formatDateOnly(assignment.work_date)) || 0;
         shiftReward = assignment.shift.bonus_salary || 0;
 
         // 5. Total Shift Salary
-        totalSalary = baseSalary + nightBonus + weekendBonus + shiftReward;
+        totalSalary = baseSalary + nightBonus + weekendBonus + appliedOtherAllowance + shiftReward;
 
         // Accumulate totals
         payroll.totalBaseSalary += baseSalary;
         payroll.totalNightBonus += nightBonus;
         payroll.totalWeekendBonus += weekendBonus;
+        payroll.totalOtherAllowance += appliedOtherAllowance;
         payroll.totalShiftReward += shiftReward;
         payroll.totalSalary += totalSalary;
       }
@@ -246,6 +260,7 @@ export class PayrollService {
         baseSalary,
         nightBonus,
         weekendBonus,
+        otherAllowance: appliedOtherAllowance,
         shiftReward,
         totalSalary,
         isCompleted,
@@ -288,6 +303,77 @@ export class PayrollService {
       await this.prisma.setSetting('DEFAULT_SERVER_SALARY', body.defaultServerSalary.toString());
     }
     return { success: true };
+  }
+
+  async getAllowances(startDateStr?: string, endDateStr?: string) {
+    const where: any = {};
+    if (startDateStr && endDateStr) {
+      where.work_date = {
+        gte: this.parseDateOnly(startDateStr),
+        lte: this.parseDateOnly(endDateStr),
+      };
+    }
+
+    return this.prisma.payrollAllowance.findMany({
+      where,
+      orderBy: { work_date: 'asc' },
+    });
+  }
+
+  async upsertAllowance(body: { work_date: string; amount: number; note?: string }) {
+    const workDate = this.parseDateOnly(body.work_date);
+    if (await this.prisma.isDateLocked(workDate)) {
+      throw new BadRequestException('Ngày phụ cấp này thuộc giai đoạn đã chốt bảng lương. Không thể chỉnh sửa.');
+    }
+
+    return this.prisma.payrollAllowance.upsert({
+      where: { work_date: workDate },
+      update: {
+        amount: Number(body.amount) || 0,
+        note: body.note || null,
+      },
+      create: {
+        work_date: workDate,
+        amount: Number(body.amount) || 0,
+        note: body.note || null,
+      },
+    });
+  }
+
+  async updateAllowance(id: string, body: { work_date: string; amount: number; note?: string }) {
+    const existing = await this.prisma.payrollAllowance.findUnique({ where: { id } });
+    if (!existing) {
+      throw new BadRequestException('Không tìm thấy ngày phụ cấp.');
+    }
+    if (await this.prisma.isDateLocked(existing.work_date)) {
+      throw new BadRequestException('Ngày phụ cấp này thuộc giai đoạn đã chốt bảng lương. Không thể chỉnh sửa.');
+    }
+
+    const workDate = this.parseDateOnly(body.work_date);
+    if (await this.prisma.isDateLocked(workDate)) {
+      throw new BadRequestException('Ngày phụ cấp mới thuộc giai đoạn đã chốt bảng lương. Không thể chỉnh sửa.');
+    }
+
+    return this.prisma.payrollAllowance.update({
+      where: { id },
+      data: {
+        work_date: workDate,
+        amount: Number(body.amount) || 0,
+        note: body.note || null,
+      },
+    });
+  }
+
+  async deleteAllowance(id: string) {
+    const existing = await this.prisma.payrollAllowance.findUnique({ where: { id } });
+    if (!existing) {
+      throw new BadRequestException('Không tìm thấy ngày phụ cấp.');
+    }
+    if (await this.prisma.isDateLocked(existing.work_date)) {
+      throw new BadRequestException('Ngày phụ cấp này thuộc giai đoạn đã chốt bảng lương. Không thể xóa.');
+    }
+
+    return this.prisma.payrollAllowance.delete({ where: { id } });
   }
 
   async getPeriodLockStatus(startDateStr: string, endDateStr: string) {
@@ -357,6 +443,7 @@ export class PayrollService {
             total_base_salary: record.totalBaseSalary,
             total_night_bonus: record.totalNightBonus,
             total_weekend_bonus: record.totalWeekendBonus,
+            total_other_allowance: record.totalOtherAllowance,
             total_shift_reward: record.totalShiftReward,
             total_salary: record.totalSalary,
             details: record.details,

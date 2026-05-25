@@ -83,6 +83,7 @@ interface PayrollRecord {
   totalBaseSalary: number;
   totalNightBonus: number;
   totalWeekendBonus: number;
+  totalOtherAllowance: number;
   totalShiftReward: number;
   totalSalary: number;
   details: Array<{
@@ -96,6 +97,7 @@ interface PayrollRecord {
     baseSalary: number;
     nightBonus: number;
     weekendBonus: number;
+    otherAllowance: number;
     shiftReward: number;
     totalSalary: number;
     isCompleted: boolean;
@@ -569,7 +571,7 @@ export default function StaffPage() {
                 </Card>
 
                 {/* Salary breakdown cards grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                     <div className="text-slate-400 text-[10px] font-mono leading-none">LƯƠNG CƠ BẢN</div>
                     <div className="text-sm sm:text-base font-bold text-slate-200">{formatVND(payrollData.totalBaseSalary)}</div>
@@ -581,6 +583,10 @@ export default function StaffPage() {
                   <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                     <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP CUỐI TUẦN</div>
                     <div className="text-sm sm:text-base font-bold text-indigo-400">{formatVND(payrollData.totalWeekendBonus)}</div>
+                  </Card>
+                  <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
+                    <div className="text-slate-400 text-[10px] font-mono leading-none">PHU CAP KHAC</div>
+                    <div className="text-sm sm:text-base font-bold text-violet-400">{formatVND(payrollData.totalOtherAllowance)}</div>
                   </Card>
                 </div>
 
@@ -609,6 +615,7 @@ export default function StaffPage() {
                           <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Lương ca</TableHead>
                           <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp đêm</TableHead>
                           <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp CT</TableHead>
+                          <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phu cap khac</TableHead>
                           <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Tổng nhận</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -625,12 +632,13 @@ export default function StaffPage() {
                             <TableCell className="text-xs font-mono text-slate-300 text-right">{formatVND(detail.baseSalary)}</TableCell>
                             <TableCell className="text-xs font-mono text-cyan-400 text-right">{formatVND(detail.nightBonus)}</TableCell>
                             <TableCell className="text-xs font-mono text-indigo-400 text-right">{formatVND(detail.weekendBonus)}</TableCell>
+                            <TableCell className="text-xs font-mono text-violet-400 text-right">{formatVND(detail.otherAllowance)}</TableCell>
                             <TableCell className="text-xs font-bold font-mono text-emerald-400 text-right">{formatVND(detail.totalSalary)}</TableCell>
                           </TableRow>
                         ))}
                         {payablePayrollDetails.length === 0 && (
                           <TableRow className="border-slate-850">
-                            <TableCell colSpan={6} className="h-20 text-center text-xs text-slate-500 font-mono">
+                            <TableCell colSpan={7} className="h-20 text-center text-xs text-slate-500 font-mono">
                               Chưa có ca nào đủ điều kiện tính lương trong khoảng ngày này.
                             </TableCell>
                           </TableRow>
@@ -670,6 +678,10 @@ export default function StaffPage() {
                           <div>
                             <span className="text-slate-500 block uppercase">PHỤ CẤP CUỐI TUẦN</span>
                             <span className="text-indigo-400">{formatVND(detail.weekendBonus)}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block uppercase">PHU CAP KHAC</span>
+                            <span className="text-violet-400">{formatVND(detail.otherAllowance)}</span>
                           </div>
                         </div>
                       </CardContent>

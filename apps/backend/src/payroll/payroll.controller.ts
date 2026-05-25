@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -52,6 +52,44 @@ export class PayrollController {
     },
   ) {
     return this.payrollService.updateSettings(body);
+  }
+
+  @Get('allowances')
+  async getAllowances(
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.payrollService.getAllowances(startDate, endDate);
+  }
+
+  @Post('allowances')
+  async createAllowance(
+    @Body()
+    body: {
+      work_date: string;
+      amount: number;
+      note?: string;
+    },
+  ) {
+    return this.payrollService.upsertAllowance(body);
+  }
+
+  @Put('allowances/:id')
+  async updateAllowance(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      work_date: string;
+      amount: number;
+      note?: string;
+    },
+  ) {
+    return this.payrollService.updateAllowance(id, body);
+  }
+
+  @Delete('allowances/:id')
+  async deleteAllowance(@Param('id') id: string) {
+    return this.payrollService.deleteAllowance(id);
   }
 
   @Get('lock-status')

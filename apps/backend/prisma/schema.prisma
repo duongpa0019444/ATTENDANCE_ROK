@@ -175,8 +175,9 @@ model LockedPayroll {
   absent_shifts       Int
   total_base_salary   Float
   total_night_bonus   Float
-  total_weekend_bonus Float
-  total_shift_reward  Float
+  total_weekend_bonus  Float
+  total_other_allowance Float @default(0)
+  total_shift_reward   Float
   total_salary        Float
   details             Json
 
@@ -186,4 +187,12 @@ model LockedPayroll {
   @@map("locked_payrolls")
 }
 
+model PayrollAllowance {
+  id         String   @id @default(uuid())
+  work_date DateTime @unique @db.Date
+  amount    Float    @default(0)
+  note      String?
+  created_at DateTime @default(now())
 
+  @@map("payroll_allowances")
+}

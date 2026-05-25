@@ -111,14 +111,14 @@ export default function AdminDashboard() {
       updateStaffStatus(data.assignmentId || data.userId, 'LATE');
       addAlert(
         'LATE',
-        `🚨 ESCALATION LEVEL 2: Nhân sự [${data.name}] trễ ca [${data.shift}]!`
+        `Nhân sự [${data.name}] trễ ca từ ${data.startTime || '...'} ngày ${data.dateStr || '...'} tại server [${data.serverName || data.shift || 'N/A'}]`
       );
     });
 
     socket.on('attendance-warning', (data) => {
       addAlert(
         'WARNING',
-        `⚠️ ESCALATION LEVEL 1: Nhân sự [${data.name}] chưa xác nhận ca [${data.shift}] (T-5 mins)`
+        `Nhân sự [${data.name}] chưa xác nhận ca từ ${data.startTime || '...'} ngày ${data.dateStr || '...'} tại server [${data.serverName || data.shift || 'N/A'}]`
       );
     });
 
@@ -397,7 +397,7 @@ export default function AdminDashboard() {
                         • NV nhận tin nhắc chuẩn bị ca từ: <strong className="text-cyan-400">{reminderMinutes + preparationMinutes} phút</strong> trước ca.
                       </div>
                       <div>
-                        • Admin nhận cảnh báo chưa xác nhận từ: <strong className="text-cyan-400">{unconfirmedWarningMinutes + preparationMinutes} phút</strong> trước ca.
+                        • Admin nhận thông báo chờ xác nhận từ: <strong className="text-cyan-400">{unconfirmedWarningMinutes + preparationMinutes} phút</strong> trước ca.
                       </div>
                     </div>
                   </div>

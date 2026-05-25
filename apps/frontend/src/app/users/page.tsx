@@ -337,6 +337,7 @@ export default function UsersPage() {
           <Table>
             <TableHeader className="border-slate-800">
               <TableRow className="hover:bg-slate-800/50">
+                <TableHead className="text-slate-400 w-16">STT</TableHead>
                 <TableHead className="text-slate-400">Username</TableHead>
                 <TableHead className="text-slate-400">Họ tên</TableHead>
                 <TableHead className="text-slate-400">Telegram</TableHead>
@@ -345,8 +346,9 @@ export default function UsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUsers.map((u: any) => (
+              {filteredUsers.map((u: any, index: number) => (
                 <TableRow key={u.id} className="border-slate-800 hover:bg-slate-800/50">
+                  <TableCell className="text-slate-400">{index + 1}</TableCell>
                   <TableCell className="font-mono text-sm">{u.username}</TableCell>
                   <TableCell>{u.full_name}</TableCell>
                   <TableCell>

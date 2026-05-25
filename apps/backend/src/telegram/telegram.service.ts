@@ -122,7 +122,7 @@ export class TelegramService implements OnModuleInit {
       const formattedShiftName = shiftName && shiftName !== 'null' ? shiftName : 'N/A';
       await this.bot.telegram.sendMessage(
         chatId,
-        `🔔 Sắp tới ca làm${minText}\n\nCa: ${formattedShiftName}\n${dateText}Thời gian: ${timeText}\n\nVui lòng xác nhận bạn đã sẵn sàng.`,
+        `🔔 Sắp tới ca làm${minText}\n\nServer: ${formattedShiftName}\n${dateText}Thời gian: ${timeText}\n\nVui lòng xác nhận bạn đã sẵn sàng.`,
         {
           parse_mode: 'Markdown',
           reply_markup: Markup.inlineKeyboard([

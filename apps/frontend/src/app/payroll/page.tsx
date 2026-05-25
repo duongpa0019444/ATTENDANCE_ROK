@@ -43,6 +43,7 @@ interface PayrollDetail {
   baseSalary: number;
   nightBonus: number;
   weekendBonus: number;
+  otherAllowance: number;
   shiftReward: number;
   totalSalary: number;
   isCompleted: boolean;
@@ -59,9 +60,17 @@ interface PayrollRecord {
   totalBaseSalary: number;
   totalNightBonus: number;
   totalWeekendBonus: number;
+  totalOtherAllowance: number;
   totalShiftReward: number;
   totalSalary: number;
   details: PayrollDetail[];
+}
+
+interface PayrollAllowance {
+  id: string;
+  work_date: string;
+  amount: number;
+  note?: string | null;
 }
 
 export default function PayrollPage() {
@@ -116,6 +125,11 @@ export default function PayrollPage() {
   const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
   const [shiftBaseSalaryInput, setShiftBaseSalaryInput] = useState<string>('');
   const [shiftBonusSalaryInput, setShiftBonusSalaryInput] = useState<string>('');
+  const [payrollAllowances, setPayrollAllowances] = useState<PayrollAllowance[]>([]);
+  const [allowanceDateInput, setAllowanceDateInput] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [allowanceAmountInput, setAllowanceAmountInput] = useState<string>('');
+  const [allowanceNoteInput, setAllowanceNoteInput] = useState<string>('');
+  const [isSavingAllowance, setIsSavingAllowance] = useState<boolean>(false);
 
   const checkLockStatus = useCallback(async () => {
     setIsCheckingLock(true);
@@ -231,6 +245,12 @@ export default function PayrollPage() {
         const data = await shiftsRes.json();
         setShifts(data);
       }
+
+      const allowancesRes = await apiFetch(`${API_URL}/payroll/allowances`);
+      if (allowancesRes.ok) {
+        const data = await allowancesRes.json();
+        setPayrollAllowances(data);
+      }
     } catch (err) {
       console.error('Error fetching configuration details:', err);
     }
@@ -266,6 +286,56 @@ export default function PayrollPage() {
       setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu cấu hình.' });
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  const handleSaveAllowance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingAllowance(true);
+    setSettingsMessage(null);
+    try {
+      const res = await apiFetch(`${API_URL}/payroll/allowances`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          work_date: allowanceDateInput,
+          amount: parseFloat(allowanceAmountInput) || 0,
+          note: allowanceNoteInput.trim() || null,
+        }),
+      });
+
+      if (res.ok) {
+        setAllowanceAmountInput('');
+        setAllowanceNoteInput('');
+        setSettingsMessage({ type: 'success', text: 'Đã lưu phụ cấp theo ngày.' });
+        fetchSettingsAndEntities();
+        fetchPayroll();
+        setTimeout(() => setSettingsMessage(null), 3000);
+      } else {
+        setSettingsMessage({ type: 'error', text: 'Không thể lưu phụ cấp theo ngày.' });
+      }
+    } catch (err) {
+      console.error('Failed to save allowance:', err);
+      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu phụ cấp theo ngày.' });
+    } finally {
+      setIsSavingAllowance(false);
+    }
+  };
+
+  const handleDeleteAllowance = async (id: string) => {
+    try {
+      const res = await apiFetch(`${API_URL}/payroll/allowances/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        fetchSettingsAndEntities();
+        fetchPayroll();
+      } else {
+        setSettingsMessage({ type: 'error', text: 'Không thể xóa phụ cấp theo ngày.' });
+      }
+    } catch (err) {
+      console.error('Failed to delete allowance:', err);
+      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể xóa phụ cấp theo ngày.' });
     }
   };
 
@@ -314,10 +384,10 @@ export default function PayrollPage() {
   const exportToCSV = () => {
     // UTF-8 BOM to make sure Excel handles Vietnamese characters correctly
     let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-    csvContent += 'Nhân Viên,Vai Trò,Tổng Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Thưởng Ca,Thực Nhận (VND)\n';
+    csvContent += 'Nhân Viên,Vai Trò,Tổng Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Phụ Cấp Khác,Thưởng Ca,Thực Nhận (VND)\n';
 
     payrollData.forEach((row) => {
-      csvContent += `"${row.fullName}","${row.role}",${row.completedShifts},${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.totalShiftReward},${row.totalSalary}\n`;
+      csvContent += `"${row.fullName}","${row.role}",${row.completedShifts},${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.totalOtherAllowance},${row.totalShiftReward},${row.totalSalary}\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -496,6 +566,7 @@ export default function PayrollPage() {
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP ĐÊM</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CUỐI TUẦN</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">THƯỞNG CA</TableHead>
+                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP KHÁC</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right font-bold text-cyan-400">THỰC NHẬN</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
                       </TableRow>
@@ -528,6 +599,7 @@ export default function PayrollPage() {
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalNightBonus)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalWeekendBonus)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalShiftReward)}</TableCell>
+                          <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalOtherAllowance)}</TableCell>
                           <TableCell className="text-right font-mono font-bold text-emerald-400">{formatVND(staff.totalSalary)}</TableCell>
                           <TableCell className="text-right">
                             <Button
@@ -541,7 +613,7 @@ export default function PayrollPage() {
                       ))}
                       {payrollData.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center text-slate-500 py-16">
+                          <TableCell colSpan={10} className="text-center text-slate-500 py-16">
                             Không có dữ liệu ca làm việc hoàn thành trong khoảng thời gian đã chọn.
                           </TableCell>
                         </TableRow>
@@ -632,7 +704,6 @@ export default function PayrollPage() {
                       className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
                     />
                   </div>
-
                   {settingsMessage && (
                     <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
                       ? 'bg-green-500/10 border-green-500/20 text-green-400'
@@ -656,6 +727,105 @@ export default function PayrollPage() {
 
             {/* Server and Shift settings lists */}
             <div className="lg:col-span-2 space-y-6">
+              <Card className="bg-slate-900/40 border-slate-855 backdrop-blur-xl">
+                <CardHeader>
+                  <CardTitle className="text-base text-slate-200 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-cyan-400" />
+                    Phụ Cấp Theo Ngày
+                  </CardTitle>
+                  <CardDescription className="text-slate-400 text-xs">
+                    Chỉ nhân sự được phân ca vào đúng ngày này mới được cộng phụ cấp.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <form onSubmit={handleSaveAllowance} className="grid grid-cols-1 md:grid-cols-[150px_160px_1fr_auto] gap-3 items-end">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">NGÀY</label>
+                      <Input
+                        type="date"
+                        value={allowanceDateInput}
+                        onChange={(e) => setAllowanceDateInput(e.target.value)}
+                        required
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">SỐ TIỀN</label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={allowanceAmountInput ? new Intl.NumberFormat('vi-VN').format(Number(allowanceAmountInput)) : ''}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
+                          setAllowanceAmountInput(isNaN(raw) ? '' : String(raw));
+                        }}
+                        required
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">GHI CHÚ</label>
+                      <Input
+                        value={allowanceNoteInput}
+                        onChange={(e) => setAllowanceNoteInput(e.target.value)}
+                        placeholder="VD: Tết, lễ 30/4..."
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 text-xs focus-visible:ring-cyan-500/20"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      disabled={isSavingAllowance}
+                      className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs h-9 rounded"
+                    >
+                      {isSavingAllowance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Lưu'}
+                    </Button>
+                  </form>
+
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="border-slate-850">
+                        <TableRow className="border-slate-850 hover:bg-transparent">
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase">NGÀY</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase">GHI CHÚ</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {payrollAllowances.map((allowance) => (
+                          <TableRow key={allowance.id} className="border-slate-850">
+                            <TableCell className="font-mono text-xs text-slate-200">
+                              {formatDateVi(allowance.work_date)}
+                            </TableCell>
+                            <TableCell className="text-xs text-slate-300">
+                              {allowance.note || '-'}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-slate-200">
+                              {formatVND(allowance.amount)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                type="button"
+                                onClick={() => handleDeleteAllowance(allowance.id)}
+                                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-400 h-7 px-2.5 rounded text-[11px]"
+                              >
+                                Xóa
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {payrollAllowances.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-slate-500 py-8 text-xs">
+                              Chưa có ngày phụ cấp nào.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Server base salaries table */}
               <Card className="bg-slate-900/40 border-slate-855 backdrop-blur-xl">
@@ -752,7 +922,7 @@ export default function PayrollPage() {
           <div className="space-y-4 pt-2">
 
             {/* Staff Mini Stat block */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-950/40 border border-slate-800 rounded-lg text-xs leading-relaxed">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 bg-slate-950/40 border border-slate-800 rounded-lg text-xs leading-relaxed">
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Số Ca Hoàn Thành</span>
                 <strong className="text-sm sm:text-base text-cyan-400">{selectedStaff?.completedShifts} / {selectedStaff?.totalShifts}</strong>
@@ -760,6 +930,10 @@ export default function PayrollPage() {
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Phụ Cấp Đêm</span>
                 <strong className="text-sm sm:text-base text-yellow-400">{selectedStaff ? formatVND(selectedStaff.totalNightBonus) : '0đ'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Phụ Cấp Khác</span>
+                <strong className="text-sm sm:text-base text-indigo-400">{selectedStaff ? formatVND(selectedStaff.totalOtherAllowance) : '0đ'}</strong>
               </div>
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Tổng Thực Nhận</span>
@@ -779,6 +953,7 @@ export default function PayrollPage() {
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">LƯƠNG CB</TableHead>
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">P.CẤP ĐÊM</TableHead>
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">P.CẤP CT</TableHead>
+                      <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">PHỤ CẤP KHÁC</TableHead>
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">THƯỞNG</TableHead>
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">TỔNG</TableHead>
                     </TableRow>
@@ -806,6 +981,9 @@ export default function PayrollPage() {
                           {detail.isCompleted && detail.weekendBonus > 0 ? formatVND(detail.weekendBonus) : '-'}
                         </TableCell>
                         <TableCell className="text-right font-mono text-[11px] text-slate-300 whitespace-nowrap">
+                          {detail.isCompleted && detail.otherAllowance > 0 ? formatVND(detail.otherAllowance) : '-'}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-[11px] text-slate-300 whitespace-nowrap">
                           {detail.isCompleted && detail.shiftReward > 0 ? formatVND(detail.shiftReward) : '-'}
                         </TableCell>
                         <TableCell className="text-right font-mono text-[11px] font-semibold text-emerald-400 whitespace-nowrap">
@@ -815,7 +993,7 @@ export default function PayrollPage() {
                     ))}
                     {selectedStaff?.details.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-slate-500 py-10">
+                        <TableCell colSpan={8} className="text-center text-slate-500 py-10">
                           Không có dữ liệu ca làm trong khoảng thời gian này.
                         </TableCell>
                       </TableRow>
