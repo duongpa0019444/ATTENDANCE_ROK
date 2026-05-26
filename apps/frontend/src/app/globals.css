@@ -176,9 +176,13 @@
 }
 
 .react-datepicker__day--selected,
-.react-datepicker__day--keyboard-selected {
+.react-datepicker__day--in-range {
   background-color: #0891b2 !important;
   color: #fff !important;
+}
+
+.react-datepicker__day--keyboard-selected:not(.react-datepicker__day--in-range):not(.react-datepicker__day--selected) {
+  background-color: transparent !important;
 }
 
 .react-datepicker__day--today {
@@ -364,9 +368,14 @@ html:not(.dark) {
   }
 
   .react-datepicker__day--selected,
-  .react-datepicker__day--keyboard-selected {
+  .react-datepicker__day--in-range {
     background-color: #0891b2 !important;
     color: #ffffff !important;
+  }
+
+  .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--in-range):not(.react-datepicker__day--selected) {
+    background-color: transparent !important;
+    color: inherit !important;
   }
 
   .react-datepicker__time-container {

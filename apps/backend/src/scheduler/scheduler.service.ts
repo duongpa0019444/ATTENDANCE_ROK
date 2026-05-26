@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { PayrollService } from '../payroll/payroll.service';
 
 @Injectable()
 export class SchedulerService {
@@ -12,6 +13,7 @@ export class SchedulerService {
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
     private readonly realtimeGateway: RealtimeGateway,
+    private readonly payrollService: PayrollService,
   ) { }
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -193,6 +195,67 @@ export class SchedulerService {
           data: { message },
         });
       }
+    }
+  }
+
+  /**
+   * Auto-lock payroll for the previous week every Monday at 7:00 AM.
+   * Locks the period from Monday 7:00 AM of previous week to Monday 6:59 AM of this week.
+   */
+  @Cron('0 7 * * 1') // Every Monday at 7:00 AM
+  async handleAutoLockPayroll() {
+    this.logger.log('⏰ Running auto-lock payroll for previous week...');
+
+    const now = new Date();
+
+    // Calculate previous Monday 7:00 AM
+    const currentDay = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const daysBackToPrevMon = currentDay === 0 ? 6 : currentDay - 1; // If Sun, go back 6 days to previous Mon
+    const prevMonday = new Date(now);
+    prevMonday.setDate(now.getDate() - 7 - daysBackToPrevMon); // Go back to previous Monday (7 days before this Monday)
+    prevMonday.setHours(7, 0, 0, 0);
+
+    // This Monday 7:00 AM
+    const thisMonday = new Date(prevMonday);
+    thisMonday.setDate(thisMonday.getDate() + 7);
+    thisMonday.setHours(7, 0, 0, 0);
+
+    const startDateStr = prevMonday.toISOString().split('T')[0];
+    // End date is this Monday 6:59 AM -> use thisMonday's date minus 1 minute for end param
+    const endDateObj = new Date(thisMonday);
+    endDateObj.setMinutes(endDateObj.getMinutes() - 1);
+    const endDateStr = endDateObj.toISOString().split('T')[0];
+
+    this.logger.log(`📅 Auto-lock period: ${startDateStr} to ${endDateStr}`);
+
+    try {
+      // Check if already locked
+      const lockStatus = await this.payrollService.getPeriodLockStatus(startDateStr, endDateStr);
+      if (lockStatus.locked) {
+        this.logger.log(`✅ Period ${startDateStr} to ${endDateStr} was already locked. Skipping.`);
+        return;
+      }
+
+      // Lock the period
+      const result = await this.payrollService.lockPeriod(startDateStr, endDateStr);
+      if (result.success) {
+        this.logger.log(`✅ Successfully auto-locked payroll for period ${startDateStr} to ${endDateStr}`);
+
+        // Notify admins/managers via Telegram
+        const message = `🔒 *TỰ ĐỘNG CHỐT BẢNG LƯƠNG*\n\nTuần từ *${startDateStr}* đến *${endDateStr}* đã được hệ thống tự động chốt.\n\nVào trang Payroll để xem chi tiết.`;
+        await this.queueManagersNotification(message);
+
+        // Notify via realtime socket
+        this.realtimeGateway.notifyDashboard('payroll-locked', {
+          startDate: startDateStr,
+          endDate: endDateStr,
+          autoLocked: true,
+        });
+      } else {
+        this.logger.error(`❌ Auto-lock failed for period ${startDateStr} to ${endDateStr}: ${result.message}`);
+      }
+    } catch (err) {
+      this.logger.error(`❌ Auto-lock payroll error: ${err.message}`, err.stack);
     }
   }
 }

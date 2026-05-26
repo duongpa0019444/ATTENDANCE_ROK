@@ -128,6 +128,10 @@ export default function ShiftsPage() {
   const [isInitWeekDialogOpen, setIsInitWeekDialogOpen] = useState(false);
   const [dialogWeekStr, setDialogWeekStr] = useState<string | null>(null);
 
+  // Drag Fill Handle States
+  const [dragStartCell, setDragStartCell] = useState<{ shift: any; dateStr: string; idx: number; userIds: string[] } | null>(null);
+  const [dragCurrentIdx, setDragCurrentIdx] = useState<number | null>(null);
+
   // Right-click Context Menu state
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -176,8 +180,36 @@ export default function ShiftsPage() {
     };
   }, [isFullscreen]);
 
-  // Compute 7 days of the selected week (Monday to Sunday)
-  const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(selectedDate, i));
+    // Compute 8 days: from Monday of selected week to Monday of next week
+  const weekDays = Array.from({ length: 8 }).map((_, i) => addDays(selectedDate, i));
+  
+    // Helper: check if a shift+date combo belongs to the current week (7AM Mon -> 6:59AM next Mon)
+  const isShiftInCurrentWeek = useCallback((shift: any, day: Date): boolean => {
+    const weekStartMon = selectedDate;
+    const nextWeekMon = addDays(weekStartMon, 7);
+    
+    // Get shift start time in hours and minutes
+    const [sh, sm] = (shift.start_time || '00:00').split(':').map(Number);
+    
+    // The cell's "effective start" = day at shift start time
+    const cellDate = new Date(day);
+    cellDate.setHours(sh, sm, 0, 0);
+    
+    // Week boundaries: 7:00 AM
+    const weekStart = new Date(weekStartMon);
+    weekStart.setHours(7, 0, 0, 0);
+    
+    const weekEnd = new Date(nextWeekMon);
+    weekEnd.setHours(7, 0, 0, 0);
+    
+    return cellDate >= weekStart && cellDate < weekEnd;
+  }, [selectedDate]);
+
+  const getDatabaseWorkDate = useCallback((shift: any, day: Date): Date => {
+    if (!shift) return day;
+    const [sh] = (shift.start_time || '00:00').split(':').map(Number);
+    return sh < 7 ? addDays(day, 1) : day;
+  }, []);
 
   // Keep track of dismissed weeks in React memory (resets on page reload/F5)
   const dismissedWeeksRef = useRef<string[]>([]);
@@ -198,7 +230,7 @@ export default function ShiftsPage() {
   const fetchData = useCallback(async () => {
     try {
       const startStr = format(selectedDate, 'yyyy-MM-dd');
-      const endStr = format(addDays(selectedDate, 6), 'yyyy-MM-dd');
+      const endStr = format(addDays(selectedDate, 7), 'yyyy-MM-dd');
 
       // Check lock status
       setIsCheckingWeekLock(true);
@@ -245,6 +277,66 @@ export default function ShiftsPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const dragStartCellRef = useRef<any>(null);
+  dragStartCellRef.current = dragStartCell;
+  const dragCurrentIdxRef = useRef<number | null>(null);
+  dragCurrentIdxRef.current = dragCurrentIdx;
+
+  useEffect(() => {
+    const handleGlobalMouseUp = async () => {
+      const startCell = dragStartCellRef.current;
+      const currentIdx = dragCurrentIdxRef.current;
+
+      if (!startCell || currentIdx === null) return;
+
+      // Clear drag state immediately to prevent duplicate runs
+      setDragStartCell(null);
+      setDragCurrentIdx(null);
+
+      if (startCell.idx === currentIdx) return;
+
+      const minIdx = Math.min(startCell.idx, currentIdx);
+      const maxIdx = Math.max(startCell.idx, currentIdx);
+
+      const targetDays = [];
+      for (let i = minIdx; i <= maxIdx; i++) {
+        if (i === startCell.idx) continue;
+        const targetDay = weekDays[i];
+        if (isShiftInCurrentWeek(startCell.shift, targetDay)) {
+          targetDays.push(targetDay);
+        }
+      }
+
+      if (targetDays.length === 0) return;
+
+      try {
+        await Promise.all(
+          targetDays.map((day) => {
+            const targetDate = getDatabaseWorkDate(startCell.shift, day);
+            const dateStr = format(targetDate, 'yyyy-MM-dd');
+            return apiFetch(`${API_URL}/shifts/sync-assignments`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                shift_id: startCell.shift.id,
+                work_date: dateStr,
+                user_ids: startCell.userIds,
+              })
+            });
+          })
+        );
+        fetchData();
+      } catch (err) {
+        console.error('Failed to fill/copy assignments:', err);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [weekDays, API_URL, fetchData, isShiftInCurrentWeek]);
 
   // Handle Server CRUD
   const handleCreateServer = async () => {
@@ -391,9 +483,9 @@ export default function ShiftsPage() {
     }
   };
 
-  // Cell click handler - Open Assign Dialog
   const handleCellClick = (shift: any, date: Date) => {
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const targetDate = getDatabaseWorkDate(shift, date);
+    const dateStr = format(targetDate, 'yyyy-MM-dd');
     const cellAssignments = assignments.filter(
       (a: any) => a.shift_id === shift.id && format(new Date(a.work_date), 'yyyy-MM-dd') === dateStr
     );
@@ -471,7 +563,7 @@ export default function ShiftsPage() {
         const isSameShift = a.shift_id === shift.id;
         const isSameUser = String(a.user_id) === selectedUserFilter;
         const dateStr = format(new Date(a.work_date), 'yyyy-MM-dd');
-        const isInWeek = weekDays.some(day => format(day, 'yyyy-MM-dd') === dateStr);
+        const isInWeek = weekDays.some(day => format(getDatabaseWorkDate(shift, day), 'yyyy-MM-dd') === dateStr);
         return isSameShift && isSameUser && isInWeek;
       });
       if (!hasAssignmentForUser) {
@@ -544,11 +636,13 @@ export default function ShiftsPage() {
               <span className="text-sm font-medium text-slate-400">Tuần phân ca:</span>
               <DatePicker
                 selected={selectedDate}
+                startDate={selectedDate}
+                endDate={addDays(selectedDate, 7)}
                 onChange={(date: Date | null) => {
                   if (date) setSelectedDate(startOfWeek(date, { weekStartsOn: 1 }));
                 }}
                 showWeekPicker
-                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 6), 'dd/MM')}`}
+                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 7), 'dd/MM')}`}
                 formatWeekDay={formatWeekDayLabel}
                 portalId="shift-week-datepicker-portal"
                 popperClassName="shift-week-datepicker-popper"
@@ -558,7 +652,7 @@ export default function ShiftsPage() {
             </div>
 
             <div className="text-xs text-slate-500 font-mono">
-              Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Chủ Nhật ({format(weekDays[6], 'dd/MM')})
+              Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Thứ 2 sau ({format(weekDays[7], 'dd/MM')}) (7h sáng → 6h59 sáng hôm sau)
             </div>
           </div>
           </div>
@@ -749,25 +843,46 @@ export default function ShiftsPage() {
                                 </div>
                               </TableCell>
 
-                              {/* Cells (7 weekdays) */}
+                                                            {/* Cells (8 days: Mon → next Mon) */}
                               {weekDays.map((day, idx) => {
-                                const dateStr = format(day, 'yyyy-MM-dd');
+                                const targetDate = getDatabaseWorkDate(shift, day);
+                                const dateStr = format(targetDate, 'yyyy-MM-dd');
+                                const isCellInCurrentWeek = isShiftInCurrentWeek(shift, day);
+                                
                                 // Find assignments for this specific shift on this specific date
                                 const cellAssigns = assignments.filter(
                                   (a: any) => a.shift_id === shift.id && format(new Date(a.work_date), 'yyyy-MM-dd') === dateStr
                                 );
 
+                                const isDragSelected = dragStartCell && 
+                                  dragStartCell.shift.id === shift.id && 
+                                  idx >= Math.min(dragStartCell.idx, dragCurrentIdx ?? dragStartCell.idx) && 
+                                  idx <= Math.max(dragStartCell.idx, dragCurrentIdx ?? dragStartCell.idx);
+
                                 return (
                                   <TableCell
                                     key={idx}
-                                    onClick={() => !isWeekLocked && handleCellClick(shift, day)}
+                                    onClick={() => {
+                                      if (isWeekLocked) return;
+                                      if (!isCellInCurrentWeek) return;
+                                      handleCellClick(shift, day);
+                                    }}
+                                    onMouseEnter={() => {
+                                      if (dragStartCell && dragStartCell.shift.id === shift.id) {
+                                        setDragCurrentIdx(idx);
+                                      }
+                                    }}
                                     className={`text-center p-2 border-r border-slate-800/30 relative group/cell min-h-[60px] transition-all ${
                                       isWeekLocked 
                                         ? 'cursor-not-allowed bg-slate-900/5 dark:bg-slate-950/10' 
+                                        : !isCellInCurrentWeek
+                                        ? 'cursor-not-allowed bg-slate-900/30 dark:bg-slate-950/30 opacity-50'
                                         : 'cursor-pointer hover:bg-cyan-500/5'
-                                    }`}
+                                    } ${isDragSelected ? 'ring-2 ring-cyan-500 bg-cyan-500/10 dark:bg-cyan-500/10 z-10' : ''}`}
                                   >
-                                    {cellAssigns.length === 0 ? (
+                                    {!isCellInCurrentWeek ? (
+                                      <span className="text-xs text-slate-600 font-semibold select-none">—</span>
+                                    ) : cellAssigns.length === 0 ? (
                                       <span className="text-xs text-red-500/40 font-semibold select-none group-hover/cell:text-cyan-400">x</span>
                                     ) : (
                                       <div className="flex flex-col gap-1 items-center justify-center">
@@ -783,10 +898,29 @@ export default function ShiftsPage() {
                                       </div>
                                     )}
                                     {/* Quick edit overlay indicator */}
-                                    {!isWeekLocked && (
-                                      <div className="absolute right-1 bottom-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
+                                    {!isWeekLocked && isCellInCurrentWeek && (
+                                      <div className="absolute right-1 top-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
                                         <Edit2 className="w-3 h-3 text-cyan-400" />
                                       </div>
+                                    )}
+                                    {/* Fill handle in the bottom-right corner */}
+                                    {!isWeekLocked && isCellInCurrentWeek && (
+                                      <div
+                                        className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-cyan-500 hover:bg-cyan-400 border border-slate-950 cursor-crosshair z-30 opacity-0 group-hover/cell:opacity-100 transition-opacity"
+                                        onMouseDown={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          const assignedUserIds = cellAssigns.map((a: any) => a.user_id);
+                                          setDragStartCell({
+                                            shift,
+                                            dateStr,
+                                            idx,
+                                            userIds: assignedUserIds
+                                          });
+                                          setDragCurrentIdx(idx);
+                                        }}
+                                        title="Kéo để sao chép cho các ngày khác (Fill Handle)"
+                                      />
                                     )}
                                   </TableCell>
                                 );
@@ -896,7 +1030,7 @@ export default function ShiftsPage() {
                       }
                     }}
                     showWeekPicker
-                    value={newShift.week_start_date ? `Tuần: ${format(newShift.week_start_date, 'dd/MM')} - ${format(addDays(newShift.week_start_date, 6), 'dd/MM')}` : ''}
+                    value={newShift.week_start_date ? `Tuần: ${format(newShift.week_start_date, 'dd/MM')} - ${format(addDays(newShift.week_start_date, 7), 'dd/MM')}` : ''}
                     formatWeekDay={formatWeekDayLabel}
                     popperClassName="z-50"
                     className="flex h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
@@ -1179,7 +1313,7 @@ export default function ShiftsPage() {
                 <Calendar className="w-5.5 h-5.5 text-cyan-400" /> Khởi Tạo Tuần Mới
               </DialogTitle>
               <DialogDescription className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-                Tuần từ <strong className="text-slate-200">{dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''}</strong> đến <strong className="text-slate-200">{dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 6), 'dd/MM/yyyy') : ''}</strong> chưa được khởi tạo ca làm việc nào.
+                Tuần từ <strong className="text-slate-200">{dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''}</strong> đến <strong className="text-slate-200">{dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 7), 'dd/MM/yyyy') : ''}</strong> chưa được khởi tạo ca làm việc nào.
               </DialogDescription>
             </DialogHeader>
 

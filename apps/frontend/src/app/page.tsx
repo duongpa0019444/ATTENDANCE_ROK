@@ -1,14 +1,32 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Activity, Clock, AlertTriangle, CheckCircle2, Terminal, MapPin, Save, Loader2, Settings } from 'lucide-react';
+import { Activity, Clock, AlertTriangle, CheckCircle2, Terminal, MapPin, Save, Loader2, Settings, Calendar } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useAttendanceStore, AttendanceStatus } from '@/store/useAttendanceStore';
 import { socket } from '@/lib/socket';
 import { apiFetch } from '@/lib/api';
+import DatePicker, { registerLocale } from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { vi } from 'date-fns/locale';
+import { format, addDays, parseISO } from 'date-fns';
+
+registerLocale('vi', vi);
+
+const formatWeekDayLabel = (nameOfDay: string) => {
+  const cleanName = nameOfDay.toLowerCase().trim();
+  if (cleanName.includes('chủ nhật') || cleanName.includes('cn') || cleanName.includes('sun')) return 'CN';
+  if (cleanName.includes('hai') || cleanName.includes('mon') || cleanName.includes('t2') || cleanName.includes('2')) return 'T2';
+  if (cleanName.includes('ba') || cleanName.includes('tue') || cleanName.includes('t3') || cleanName.includes('3')) return 'T3';
+  if (cleanName.includes('tư') || cleanName.includes('tu') || cleanName.includes('wed') || cleanName.includes('t4') || cleanName.includes('4')) return 'T4';
+  if (cleanName.includes('năm') || cleanName.includes('nam') || cleanName.includes('thu') || cleanName.includes('t5') || cleanName.includes('5')) return 'T5';
+  if (cleanName.includes('sáu') || cleanName.includes('sau') || cleanName.includes('fri') || cleanName.includes('t6') || cleanName.includes('6')) return 'T6';
+  if (cleanName.includes('bảy') || cleanName.includes('bay') || cleanName.includes('sat') || cleanName.includes('t7') || cleanName.includes('7')) return 'T7';
+  return nameOfDay;
+};
 
 interface RealtimeAlert {
   id: string;
@@ -45,19 +63,32 @@ export default function AdminDashboard() {
     setAlerts((prev) => [newAlert, ...prev].slice(0, 10)); // keep last 10 alerts
   };
 
-  useEffect(() => {
-    // Clock setup
-    const timer = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
+  const [filterDate, setFilterDate] = useState<Date>(() => new Date());
 
-    // Initial Data Fetch
-    const fetchAssignments = async () => {
-      try {
-        const res = await apiFetch(`${API_URL}/shifts/assignments`);
-        if (!res.ok) throw new Error('Failed to fetch assignments');
-        const data = await res.json();
+  const fetchAssignments = useCallback(async () => {
+    try {
+      const dateStr = format(filterDate, 'yyyy-MM-dd');
+      const nextDateStr = format(addDays(filterDate, 1), 'yyyy-MM-dd');
+      const res = await apiFetch(`${API_URL}/shifts/assignments?start_date=${dateStr}&end_date=${nextDateStr}`);
+      if (!res.ok) throw new Error('Failed to fetch assignments');
+      const data = await res.json();
 
-        // Map assignments to Staff interface
-        const mapped = data.map((a: any) => {
+      // Filter and map assignments according to business day: 7AM selected date to 6:59AM next day
+      const mapped = data
+        .filter((a: any) => {
+          if (!a.shift || !a.work_date) return false;
+          const [sh] = (a.shift.start_time || '00:00').split(':').map(Number);
+          const assignmentDateStr = format(parseISO(a.work_date), 'yyyy-MM-dd');
+          
+          if (assignmentDateStr === dateStr) {
+            return sh >= 7;
+          }
+          if (assignmentDateStr === nextDateStr) {
+            return sh < 7;
+          }
+          return false;
+        })
+        .map((a: any) => {
           const log = a.attendance_logs?.[0];
           const serverName = a.shift?.server?.name || a.shift?.name || 'Ca làm';
           return {
@@ -69,11 +100,19 @@ export default function AdminDashboard() {
             lateMinutes: log?.late_minutes || 0,
           };
         });
-        setStaffList(mapped);
-      } catch (err) {
-        console.error('Error fetching shift assignments:', err);
-      }
-    };
+      setStaffList(mapped);
+    } catch (err) {
+      console.error('Error fetching shift assignments:', err);
+    }
+  }, [filterDate, API_URL, setStaffList]);
+
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
+
+  useEffect(() => {
+    // Clock setup
+    const timer = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
 
     const fetchSettings = async () => {
       try {
@@ -93,7 +132,6 @@ export default function AdminDashboard() {
       }
     };
 
-    fetchAssignments();
     fetchSettings();
 
     // Socket setup
@@ -144,7 +182,7 @@ export default function AdminDashboard() {
       socket.off('attendance-warning');
       socket.off('manager-alert');
     };
-  }, [setStaffList, updateStaffStatus, API_URL]);
+  }, [updateStaffStatus, API_URL]);
 
   const getStatusBadge = (status: AttendanceStatus, lateMinutes?: number) => {
     switch (status) {
@@ -294,11 +332,31 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Realtime Table */}
           <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-xl lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-200">
-                <Activity className="w-5 h-5 text-cyan-400" />
-                Realtime Active Shifts
-              </CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between pb-3 space-y-0 gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-slate-200">
+                  <Activity className="w-5 h-5 text-cyan-400" />
+                  Realtime Active Shifts
+                </CardTitle>
+                <p className="text-xs text-slate-400 mt-1">
+                  💡 Ca làm trong ngày tính từ 07h00 sáng ngày chọn đến 06h59 sáng hôm sau.
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-800/50 transition-colors relative z-40">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <DatePicker
+                  selected={filterDate}
+                  onChange={(date: Date | null) => {
+                    if (date) setFilterDate(date);
+                  }}
+                  dateFormat="dd/MM/yyyy"
+                  locale="vi"
+                  formatWeekDay={formatWeekDayLabel}
+                  popperClassName="z-50"
+                  popperPlacement="bottom-end"
+                  className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
+                />
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
@@ -360,8 +418,12 @@ export default function AdminDashboard() {
                         <label className="text-[10px] text-slate-400 font-mono">NHẮC NV TRƯỚC CA (PHÚT)</label>
                         <Input
                           type="number"
-                          value={reminderMinutes}
-                          onChange={(e) => setReminderMinutes(Number(e.target.value))}
+                          value={reminderMinutes === 0 ? '' : reminderMinutes}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setReminderMinutes(val === '' ? 0 : Number(val));
+                          }}
+                          placeholder="0"
                           required
                           min={1}
                           className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
@@ -371,8 +433,12 @@ export default function AdminDashboard() {
                         <label className="text-[10px] text-slate-400 font-mono">TG CHUẨN BỊ THÊM (PHÚT)</label>
                         <Input
                           type="number"
-                          value={preparationMinutes}
-                          onChange={(e) => setPreparationMinutes(Number(e.target.value))}
+                          value={preparationMinutes === 0 ? '' : preparationMinutes}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPreparationMinutes(val === '' ? 0 : Number(val));
+                          }}
+                          placeholder="0"
                           required
                           min={0}
                           className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
@@ -383,8 +449,12 @@ export default function AdminDashboard() {
                       <label className="text-[10px] text-slate-400 font-mono">CẢNH BÁO ADMIN (PHÚT)</label>
                       <Input
                         type="number"
-                        value={unconfirmedWarningMinutes}
-                        onChange={(e) => setUnconfirmedWarningMinutes(Number(e.target.value))}
+                        value={unconfirmedWarningMinutes === 0 ? '' : unconfirmedWarningMinutes}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setUnconfirmedWarningMinutes(val === '' ? 0 : Number(val));
+                        }}
+                        placeholder="0"
                         required
                         min={1}
                         className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"

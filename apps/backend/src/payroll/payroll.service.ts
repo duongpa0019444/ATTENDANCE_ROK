@@ -160,7 +160,18 @@ export class PayrollService {
     // Grouping map
     const userPayrollMap = new Map<string, any>();
 
+    const isRangeFilter = startDateStr !== endDateStr;
+    const startBoundary = `${startDateStr}T07:00:00`;
+    const endBoundary = `${endDateStr}T06:59:59`;
+
     for (const assignment of assignments) {
+      if (isRangeFilter) {
+        const assignmentTimeStr = `${this.formatDateOnly(assignment.work_date)}T${assignment.shift.start_time || '00:00'}:00`;
+        if (assignmentTimeStr < startBoundary || assignmentTimeStr > endBoundary) {
+          continue;
+        }
+      }
+
       const user = assignment.user;
       const log = assignment.attendance_logs?.[0];
 
@@ -225,10 +236,33 @@ export class PayrollService {
           nightBonus = bonusNight3_7;
         }
 
-        // 3. Weekend Bonus
+                        // 3. Weekend Bonus
+        // A shift gets weekend bonus if its start time falls within:
+        // 7:00 AM Saturday -> 6:59 AM Monday
         const workDate = new Date(assignment.work_date);
-        const day = workDate.getDay(); // 0 = Sunday, 6 = Saturday
-        if (day === 0 || day === 6) {
+        const [sh2, sm2] = startTime.split(':').map(Number);
+        const shiftStartDateTime = new Date(workDate);
+        shiftStartDateTime.setHours(sh2, sm2, 0, 0);
+
+        // Calculate boundaries:
+        // Saturday 7:00 AM of the same week
+        const dayOfWeek = workDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+        const saturday7am = new Date(workDate);
+        // Days to go back to Saturday:
+        // If Sun(0): go back 1 day -> Sat
+        // If Mon(1): go back 2 days -> Sat
+        // If Tue(2): go back 3 days -> Sat
+        // ... If Sat(6): go back 0 days -> Sat
+        const daysBackToSat = (dayOfWeek + 1) % 7; // Sun=1, Mon=2, ..., Sat=0
+        saturday7am.setDate(workDate.getDate() - daysBackToSat);
+        saturday7am.setHours(7, 0, 0, 0);
+
+        // Monday 7:00 AM = Saturday 7:00 AM + 2 days
+        const monday7am = new Date(saturday7am);
+        monday7am.setDate(monday7am.getDate() + 2);
+        monday7am.setHours(7, 0, 0, 0);
+
+        if (shiftStartDateTime >= saturday7am && shiftStartDateTime < monday7am) {
           weekendBonus = bonusWeekend;
         }
 
