@@ -418,8 +418,12 @@ export default function AdminDashboard() {
                         <label className="text-[10px] text-slate-400 font-mono">NHẮC NV TRƯỚC CA (PHÚT)</label>
                         <Input
                           type="number"
-                          value={reminderMinutes}
-                          onChange={(e) => setReminderMinutes(Number(e.target.value))}
+                          value={reminderMinutes === 0 ? '' : reminderMinutes}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setReminderMinutes(val === '' ? 0 : Number(val));
+                          }}
+                          placeholder="0"
                           required
                           min={1}
                           className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
@@ -429,8 +433,12 @@ export default function AdminDashboard() {
                         <label className="text-[10px] text-slate-400 font-mono">TG CHUẨN BỊ THÊM (PHÚT)</label>
                         <Input
                           type="number"
-                          value={preparationMinutes}
-                          onChange={(e) => setPreparationMinutes(Number(e.target.value))}
+                          value={preparationMinutes === 0 ? '' : preparationMinutes}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPreparationMinutes(val === '' ? 0 : Number(val));
+                          }}
+                          placeholder="0"
                           required
                           min={0}
                           className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"
@@ -441,8 +449,12 @@ export default function AdminDashboard() {
                       <label className="text-[10px] text-slate-400 font-mono">CẢNH BÁO ADMIN (PHÚT)</label>
                       <Input
                         type="number"
-                        value={unconfirmedWarningMinutes}
-                        onChange={(e) => setUnconfirmedWarningMinutes(Number(e.target.value))}
+                        value={unconfirmedWarningMinutes === 0 ? '' : unconfirmedWarningMinutes}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setUnconfirmedWarningMinutes(val === '' ? 0 : Number(val));
+                        }}
+                        placeholder="0"
                         required
                         min={1}
                         className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500"

@@ -205,6 +205,12 @@ export default function ShiftsPage() {
     return cellDate >= weekStart && cellDate < weekEnd;
   }, [selectedDate]);
 
+  const getDatabaseWorkDate = useCallback((shift: any, day: Date): Date => {
+    if (!shift) return day;
+    const [sh] = (shift.start_time || '00:00').split(':').map(Number);
+    return sh < 7 ? addDays(day, 1) : day;
+  }, []);
+
   // Keep track of dismissed weeks in React memory (resets on page reload/F5)
   const dismissedWeeksRef = useRef<string[]>([]);
 
@@ -307,7 +313,8 @@ export default function ShiftsPage() {
       try {
         await Promise.all(
           targetDays.map((day) => {
-            const dateStr = format(day, 'yyyy-MM-dd');
+            const targetDate = getDatabaseWorkDate(startCell.shift, day);
+            const dateStr = format(targetDate, 'yyyy-MM-dd');
             return apiFetch(`${API_URL}/shifts/sync-assignments`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -476,9 +483,9 @@ export default function ShiftsPage() {
     }
   };
 
-  // Cell click handler - Open Assign Dialog
   const handleCellClick = (shift: any, date: Date) => {
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const targetDate = getDatabaseWorkDate(shift, date);
+    const dateStr = format(targetDate, 'yyyy-MM-dd');
     const cellAssignments = assignments.filter(
       (a: any) => a.shift_id === shift.id && format(new Date(a.work_date), 'yyyy-MM-dd') === dateStr
     );
@@ -556,7 +563,7 @@ export default function ShiftsPage() {
         const isSameShift = a.shift_id === shift.id;
         const isSameUser = String(a.user_id) === selectedUserFilter;
         const dateStr = format(new Date(a.work_date), 'yyyy-MM-dd');
-        const isInWeek = weekDays.some(day => format(day, 'yyyy-MM-dd') === dateStr);
+        const isInWeek = weekDays.some(day => format(getDatabaseWorkDate(shift, day), 'yyyy-MM-dd') === dateStr);
         return isSameShift && isSameUser && isInWeek;
       });
       if (!hasAssignmentForUser) {
@@ -838,7 +845,8 @@ export default function ShiftsPage() {
 
                                                             {/* Cells (8 days: Mon → next Mon) */}
                               {weekDays.map((day, idx) => {
-                                const dateStr = format(day, 'yyyy-MM-dd');
+                                const targetDate = getDatabaseWorkDate(shift, day);
+                                const dateStr = format(targetDate, 'yyyy-MM-dd');
                                 const isCellInCurrentWeek = isShiftInCurrentWeek(shift, day);
                                 
                                 // Find assignments for this specific shift on this specific date
