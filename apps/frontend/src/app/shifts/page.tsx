@@ -128,6 +128,10 @@ export default function ShiftsPage() {
   const [isInitWeekDialogOpen, setIsInitWeekDialogOpen] = useState(false);
   const [dialogWeekStr, setDialogWeekStr] = useState<string | null>(null);
 
+  // Drag Fill Handle States
+  const [dragStartCell, setDragStartCell] = useState<{ shift: any; dateStr: string; idx: number; userIds: string[] } | null>(null);
+  const [dragCurrentIdx, setDragCurrentIdx] = useState<number | null>(null);
+
   // Right-click Context Menu state
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -267,6 +271,65 @@ export default function ShiftsPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const dragStartCellRef = useRef<any>(null);
+  dragStartCellRef.current = dragStartCell;
+  const dragCurrentIdxRef = useRef<number | null>(null);
+  dragCurrentIdxRef.current = dragCurrentIdx;
+
+  useEffect(() => {
+    const handleGlobalMouseUp = async () => {
+      const startCell = dragStartCellRef.current;
+      const currentIdx = dragCurrentIdxRef.current;
+
+      if (!startCell || currentIdx === null) return;
+
+      // Clear drag state immediately to prevent duplicate runs
+      setDragStartCell(null);
+      setDragCurrentIdx(null);
+
+      if (startCell.idx === currentIdx) return;
+
+      const minIdx = Math.min(startCell.idx, currentIdx);
+      const maxIdx = Math.max(startCell.idx, currentIdx);
+
+      const targetDays = [];
+      for (let i = minIdx; i <= maxIdx; i++) {
+        if (i === startCell.idx) continue;
+        const targetDay = weekDays[i];
+        if (isShiftInCurrentWeek(startCell.shift, targetDay)) {
+          targetDays.push(targetDay);
+        }
+      }
+
+      if (targetDays.length === 0) return;
+
+      try {
+        await Promise.all(
+          targetDays.map((day) => {
+            const dateStr = format(day, 'yyyy-MM-dd');
+            return apiFetch(`${API_URL}/shifts/sync-assignments`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                shift_id: startCell.shift.id,
+                work_date: dateStr,
+                user_ids: startCell.userIds,
+              })
+            });
+          })
+        );
+        fetchData();
+      } catch (err) {
+        console.error('Failed to fill/copy assignments:', err);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [weekDays, API_URL, fetchData, isShiftInCurrentWeek]);
 
   // Handle Server CRUD
   const handleCreateServer = async () => {
@@ -566,6 +629,8 @@ export default function ShiftsPage() {
               <span className="text-sm font-medium text-slate-400">Tuần phân ca:</span>
               <DatePicker
                 selected={selectedDate}
+                startDate={selectedDate}
+                endDate={addDays(selectedDate, 7)}
                 onChange={(date: Date | null) => {
                   if (date) setSelectedDate(startOfWeek(date, { weekStartsOn: 1 }));
                 }}
@@ -781,6 +846,11 @@ export default function ShiftsPage() {
                                   (a: any) => a.shift_id === shift.id && format(new Date(a.work_date), 'yyyy-MM-dd') === dateStr
                                 );
 
+                                const isDragSelected = dragStartCell && 
+                                  dragStartCell.shift.id === shift.id && 
+                                  idx >= Math.min(dragStartCell.idx, dragCurrentIdx ?? dragStartCell.idx) && 
+                                  idx <= Math.max(dragStartCell.idx, dragCurrentIdx ?? dragStartCell.idx);
+
                                 return (
                                   <TableCell
                                     key={idx}
@@ -789,13 +859,18 @@ export default function ShiftsPage() {
                                       if (!isCellInCurrentWeek) return;
                                       handleCellClick(shift, day);
                                     }}
+                                    onMouseEnter={() => {
+                                      if (dragStartCell && dragStartCell.shift.id === shift.id) {
+                                        setDragCurrentIdx(idx);
+                                      }
+                                    }}
                                     className={`text-center p-2 border-r border-slate-800/30 relative group/cell min-h-[60px] transition-all ${
                                       isWeekLocked 
                                         ? 'cursor-not-allowed bg-slate-900/5 dark:bg-slate-950/10' 
                                         : !isCellInCurrentWeek
                                         ? 'cursor-not-allowed bg-slate-900/30 dark:bg-slate-950/30 opacity-50'
                                         : 'cursor-pointer hover:bg-cyan-500/5'
-                                    }`}
+                                    } ${isDragSelected ? 'ring-2 ring-cyan-500 bg-cyan-500/10 dark:bg-cyan-500/10 z-10' : ''}`}
                                   >
                                     {!isCellInCurrentWeek ? (
                                       <span className="text-xs text-slate-600 font-semibold select-none">—</span>
@@ -816,9 +891,28 @@ export default function ShiftsPage() {
                                     )}
                                     {/* Quick edit overlay indicator */}
                                     {!isWeekLocked && isCellInCurrentWeek && (
-                                      <div className="absolute right-1 bottom-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
+                                      <div className="absolute right-1 top-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
                                         <Edit2 className="w-3 h-3 text-cyan-400" />
                                       </div>
+                                    )}
+                                    {/* Fill handle in the bottom-right corner */}
+                                    {!isWeekLocked && isCellInCurrentWeek && (
+                                      <div
+                                        className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-cyan-500 hover:bg-cyan-400 border border-slate-950 cursor-crosshair z-30 opacity-0 group-hover/cell:opacity-100 transition-opacity"
+                                        onMouseDown={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          const assignedUserIds = cellAssigns.map((a: any) => a.user_id);
+                                          setDragStartCell({
+                                            shift,
+                                            dateStr,
+                                            idx,
+                                            userIds: assignedUserIds
+                                          });
+                                          setDragCurrentIdx(idx);
+                                        }}
+                                        title="Kéo để sao chép cho các ngày khác (Fill Handle)"
+                                      />
                                     )}
                                   </TableCell>
                                 );

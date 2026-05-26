@@ -423,12 +423,10 @@ export default function UsersPage() {
               <label className="text-sm text-slate-400">Họ tên</label>
               <Input className="bg-slate-800 border-slate-700" value={editingUser?.full_name || ''} onChange={e => setEditingUser({ ...editingUser, full_name: e.target.value })} />
             </div>
-            {editingUser?.role === 'ADMIN' && (
-              <div className="space-y-2">
-                <label className="text-sm text-slate-400">Mật khẩu mới (Để trống nếu không muốn đổi)</label>
-                <Input className="bg-slate-800 border-slate-700" type="password" placeholder="***" value={editingUser?.password || ''} onChange={e => setEditingUser({ ...editingUser, password: e.target.value })} />
-              </div>
-            )}
+            <div className="space-y-2">
+              <label className="text-sm text-slate-400">Mật khẩu mới (Để trống nếu không muốn đổi)</label>
+              <Input className="bg-slate-800 border-slate-700" type="password" placeholder="***" value={editingUser?.password || ''} onChange={e => setEditingUser({ ...editingUser, password: e.target.value })} />
+            </div>
             <div className="space-y-2">
               <label className="text-sm text-slate-400">Vai trò</label>
               <Select

@@ -11,7 +11,7 @@ import { format, startOfMonth, parseISO } from 'date-fns';
 import {
   Calendar, Download, Settings, Save,
   Server, Clock, Loader2, Sparkles, ArrowRight,
-  Lock, Unlock, ShieldAlert
+  Lock, Unlock, ShieldAlert, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -29,6 +29,22 @@ const formatWeekDayLabel = (nameOfDay: string) => {
   if (cleanName.includes('th 6') || cleanName.includes('t6') || cleanName.includes('6') || cleanName.includes('sáu') || cleanName.includes('sau')) return 'T6';
   if (cleanName.includes('th 7') || cleanName.includes('t7') || cleanName.includes('7') || cleanName.includes('bảy') || cleanName.includes('bay')) return 'T7';
   return nameOfDay;
+};
+
+const getMonday = (d: Date) => {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(date.setDate(diff));
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+};
+
+const getNextMonday = (monday: Date) => {
+  const nextMonday = new Date(monday);
+  nextMonday.setDate(monday.getDate() + 7);
+  nextMonday.setHours(0, 0, 0, 0);
+  return nextMonday;
 };
 
 
@@ -76,9 +92,32 @@ interface PayrollAllowance {
 export default function PayrollPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
-  // Date selectors defaults to 1st of current month to today
-  const [startDate, setStartDate] = useState<string>(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [filterMode, setFilterMode] = useState<'week' | 'custom'>('week');
+  const [startDate, setStartDate] = useState<string>(() => {
+    const mon = getMonday(new Date());
+    return format(mon, 'yyyy-MM-dd');
+  });
+  const [endDate, setEndDate] = useState<string>(() => {
+    const mon = getMonday(new Date());
+    const nextMon = getNextMonday(mon);
+    return format(nextMon, 'yyyy-MM-dd');
+  });
+
+  const handleWeekChange = (offset: number) => {
+    const currentMon = parseISO(startDate);
+    const newMon = new Date(currentMon);
+    newMon.setDate(currentMon.getDate() + offset * 7);
+    const newNextMon = getNextMonday(newMon);
+    setStartDate(format(newMon, 'yyyy-MM-dd'));
+    setEndDate(format(newNextMon, 'yyyy-MM-dd'));
+  };
+
+  const handleSelectWeekByDate = (date: Date) => {
+    const mon = getMonday(date);
+    const nextMon = getNextMonday(mon);
+    setStartDate(format(mon, 'yyyy-MM-dd'));
+    setEndDate(format(nextMon, 'yyyy-MM-dd'));
+  };
 
   const [activeTab, setActiveTab] = useState<'payroll' | 'settings'>('payroll');
   const [payrollData, setPayrollData] = useState<PayrollRecord[]>([]);
@@ -415,7 +454,7 @@ export default function PayrollPage() {
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* Header Block */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-800 pb-4 gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between border-b border-slate-800 pb-4 gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tighter flex items-center gap-2">
               <span className="text-cyan-400">CYBER</span>_PAYROLL
@@ -429,39 +468,118 @@ export default function PayrollPage() {
                 </Badge>
               )}
             </h1>
-            <p className="text-slate-400 mt-1 text-sm">Hệ thống quản lý thù lao và cấu hình tự động</p>
+             <p className="text-slate-400 mt-1 text-sm">Hệ thống quản lý thù lao và cấu hình tự động</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1.5 rounded-xl backdrop-blur-xl relative z-40">
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
-                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                <DatePicker
-                  selected={startDate ? parseISO(startDate) : null}
-                  onChange={(date: Date | null) => {
-                    if (date) setStartDate(format(date, 'yyyy-MM-dd'));
-                  }}
-                  dateFormat="dd/MM/yyyy"
-                  locale="vi"
-                  formatWeekDay={formatWeekDayLabel}
-                  popperClassName="z-50"
-                  className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
-                />
-              </div>
-              <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
-                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                <DatePicker
-                  selected={endDate ? parseISO(endDate) : null}
-                  onChange={(date: Date | null) => {
-                    if (date) setEndDate(format(date, 'yyyy-MM-dd'));
-                  }}
-                  dateFormat="dd/MM/yyyy"
-                  locale="vi"
-                  formatWeekDay={formatWeekDayLabel}
-                  popperClassName="z-50"
-                  className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
-                />
-              </div>
+          <div className="flex flex-col lg:items-end gap-2 shrink-0">
+            <div className="flex flex-wrap lg:flex-nowrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 bg-slate-900 border border-slate-800 p-1.5 rounded-xl backdrop-blur-xl relative z-40">
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterMode('week');
+                  const mon = getMonday(parseISO(startDate));
+                  setStartDate(format(mon, 'yyyy-MM-dd'));
+                  setEndDate(format(getNextMonday(mon), 'yyyy-MM-dd'));
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  filterMode === 'week'
+                    ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                    : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+              >
+                Theo tuần
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode('custom')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  filterMode === 'custom'
+                    ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                    : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+              >
+                Tùy chỉnh
+              </button>
+
+              <div className="w-[1px] h-4 bg-slate-800 mx-1" />
+
+              {filterMode === 'week' ? (
+                <div className="flex items-center gap-1">
+                  <Button
+                    onClick={() => handleWeekChange(-1)}
+                    size="icon"
+                    variant="ghost"
+                    className="w-7 h-7 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg p-0"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
+                    <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                    <DatePicker
+                      selected={startDate ? parseISO(startDate) : null}
+                      startDate={startDate ? parseISO(startDate) : null}
+                      endDate={endDate ? parseISO(endDate) : null}
+                      onChange={(date: Date | null) => {
+                        if (date) handleSelectWeekByDate(date);
+                      }}
+                      dateFormat="dd/MM/yyyy"
+                      locale="vi"
+                      formatWeekDay={formatWeekDayLabel}
+                      popperClassName="z-50"
+                      className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
+                    />
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
+                    <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="text-slate-100 text-xs font-semibold min-w-22 text-center select-none font-mono">
+                      {formatDateVi(endDate)}
+                    </span>
+                  </div>
+
+                  <Button
+                    onClick={() => handleWeekChange(1)}
+                    size="icon"
+                    variant="ghost"
+                    className="w-7 h-7 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg p-0"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
+                    <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                    <DatePicker
+                      selected={startDate ? parseISO(startDate) : null}
+                      onChange={(date: Date | null) => {
+                        if (date) setStartDate(format(date, 'yyyy-MM-dd'));
+                      }}
+                      dateFormat="dd/MM/yyyy"
+                      locale="vi"
+                      formatWeekDay={formatWeekDayLabel}
+                      popperClassName="z-50"
+                      className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
+                    />
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
+                    <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                    <DatePicker
+                      selected={endDate ? parseISO(endDate) : null}
+                      onChange={(date: Date | null) => {
+                        if (date) setEndDate(format(date, 'yyyy-MM-dd'));
+                      }}
+                      dateFormat="dd/MM/yyyy"
+                      locale="vi"
+                      formatWeekDay={formatWeekDayLabel}
+                      popperClassName="z-50"
+                      className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             {isLocked ? (
               <Button
@@ -487,7 +605,13 @@ export default function PayrollPage() {
               <Download className="w-4 h-4" /> Xuất Báo Cáo
             </Button>
           </div>
+          {filterMode === 'week' && (
+            <p className="text-cyan-500/80 text-xs font-mono lg:text-right w-full">
+              💡 Chu kỳ tuần: 07h00 sáng Thứ 2 ({formatDateVi(startDate)}) đến 06h59 sáng Thứ 2 tuần sau ({formatDateVi(endDate)})
+            </p>
+          )}
         </div>
+      </div>
 
         {/* Dashboard Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
