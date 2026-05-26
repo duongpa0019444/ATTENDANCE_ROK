@@ -160,7 +160,18 @@ export class PayrollService {
     // Grouping map
     const userPayrollMap = new Map<string, any>();
 
+    const isRangeFilter = startDateStr !== endDateStr;
+    const startBoundary = `${startDateStr}T07:00:00`;
+    const endBoundary = `${endDateStr}T06:59:59`;
+
     for (const assignment of assignments) {
+      if (isRangeFilter) {
+        const assignmentTimeStr = `${this.formatDateOnly(assignment.work_date)}T${assignment.shift.start_time || '00:00'}:00`;
+        if (assignmentTimeStr < startBoundary || assignmentTimeStr > endBoundary) {
+          continue;
+        }
+      }
+
       const user = assignment.user;
       const log = assignment.attendance_logs?.[0];
 
