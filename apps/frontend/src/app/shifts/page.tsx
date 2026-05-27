@@ -13,7 +13,7 @@ import Select from 'react-select';
 import DatePicker, { registerLocale, setDefaultLocale } from 'react-datepicker';
 import { format, addDays, startOfWeek, setHours, setMinutes, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { Calendar, Server as ServerIcon, Clock, Users, Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, ShieldAlert, X, Maximize2, Minimize2 } from 'lucide-react';
+import { Calendar, Server as ServerIcon, Clock, Users, Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, ShieldAlert, X, Maximize2, Minimize2, Bell } from 'lucide-react';
 
 registerLocale('vi', vi);
 setDefaultLocale('vi');
@@ -106,6 +106,9 @@ export default function ShiftsPage() {
 
   // Selected Week Start Date (defaults to Monday of current week)
   const [selectedDate, setSelectedDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+
+  // System Settings state
+  const [systemSettings, setSystemSettings] = useState<any>(null);
 
   // Dialog Open States
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
@@ -209,6 +212,19 @@ export default function ShiftsPage() {
     return day;
   }, []);
 
+  const getNotificationTime = (startTimeStr: string, offsetMins: number) => {
+    if (!startTimeStr) return '';
+    try {
+      const [h, m] = startTimeStr.split(':').map(Number);
+      const date = new Date();
+      date.setHours(h, m, 0, 0);
+      const newDate = new Date(date.getTime() - offsetMins * 60 * 1000);
+      return format(newDate, 'HH:mm');
+    } catch (e) {
+      return '';
+    }
+  };
+
   // Keep track of dismissed weeks in React memory (resets on page reload/F5)
   const dismissedWeeksRef = useRef<string[]>([]);
 
@@ -246,17 +262,22 @@ export default function ShiftsPage() {
         setIsCheckingWeekLock(false);
       }
 
-      const [serversRes, shiftsRes, usersRes, assignRes] = await Promise.all([
+      const [serversRes, shiftsRes, usersRes, assignRes, settingsRes] = await Promise.all([
         apiFetch(`${API_URL}/servers`),
         apiFetch(`${API_URL}/shifts?week_start_date=${startStr}`),
         apiFetch(`${API_URL}/users`),
-        apiFetch(`${API_URL}/shifts/assignments?start_date=${startStr}&end_date=${endStr}`)
+        apiFetch(`${API_URL}/shifts/assignments?start_date=${startStr}&end_date=${endStr}`),
+        apiFetch(`${API_URL}/api/settings`).catch(() => null)
       ]);
 
       const sData = await serversRes.json();
       const shData = await shiftsRes.json();
       const uData = await usersRes.json();
       const aData = await assignRes.json();
+      if (settingsRes && settingsRes.ok) {
+        const settData = await settingsRes.json();
+        setSystemSettings(settData);
+      }
 
       setServers(sData);
       setShifts(shData);
@@ -1249,6 +1270,30 @@ export default function ShiftsPage() {
                   {activeCell?.shift?.start_time}
                 </strong>.
               </DialogDescription>
+              {activeCell?.shift?.start_time && (
+                <div className="mt-4 p-3 bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 rounded-xl text-xs space-y-1.5 text-slate-650 dark:text-slate-400">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-300">
+                    <Bell className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                    <span>Thời gian gửi thông báo dự kiến:</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pl-5 font-mono text-[11px]">
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-500 block uppercase text-[9px] tracking-wider mb-0.5">Nhắc nhân sự</span>
+                      <span className="text-cyan-600 dark:text-cyan-400 font-bold text-xs">
+                        {getNotificationTime(activeCell.shift.start_time, (systemSettings?.reminderMinutes ?? 10) + (systemSettings?.preparationMinutes ?? 0))}
+                      </span>{' '}
+                      <span className="text-[10px] text-slate-500 dark:text-slate-500">(T-{(systemSettings?.reminderMinutes ?? 10) + (systemSettings?.preparationMinutes ?? 0)}m)</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 dark:text-slate-500 block uppercase text-[9px] tracking-wider mb-0.5">Báo quản lý</span>
+                      <span className="text-amber-600 dark:text-amber-400 font-bold text-xs">
+                        {getNotificationTime(activeCell.shift.start_time, (systemSettings?.unconfirmedWarningMinutes ?? 5) + (systemSettings?.preparationMinutes ?? 0))}
+                      </span>{' '}
+                      <span className="text-[10px] text-slate-500 dark:text-slate-500">(T-{(systemSettings?.unconfirmedWarningMinutes ?? 5) + (systemSettings?.preparationMinutes ?? 0)}m)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </DialogHeader>
 
             <div className="space-y-4 py-4">
