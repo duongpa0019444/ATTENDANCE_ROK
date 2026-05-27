@@ -206,9 +206,7 @@ export default function ShiftsPage() {
   }, [selectedDate]);
 
   const getDatabaseWorkDate = useCallback((shift: any, day: Date): Date => {
-    if (!shift) return day;
-    const [sh] = (shift.start_time || '00:00').split(':').map(Number);
-    return sh < 7 ? addDays(day, 1) : day;
+    return day;
   }, []);
 
   // Keep track of dismissed weeks in React memory (resets on page reload/F5)
