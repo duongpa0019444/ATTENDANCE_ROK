@@ -151,7 +151,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           <div className="hidden md:flex gap-6 items-center">
             {userRole === 'STAFF' ? (
               <>
-                <a href="/staff" className={getMenuClass('/staff')}>Lịch & Bảng Lương</a>
+                <a href="/staff" className={getMenuClass('/staff')}>Lịch làm việc</a>
+                <a href="/staff/payroll" className={getMenuClass('/staff/payroll')}>Bảng lương</a>
               </>
             ) : (
               <>
@@ -240,7 +241,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={getMobileMenuClass('/staff')}
                 >
-                  Lịch & Bảng Lương
+                  Lịch làm việc
+                </a>
+                <a 
+                  href="/staff/payroll" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/staff/payroll')}
+                >
+                  Bảng lương
                 </a>
               </>
             ) : (

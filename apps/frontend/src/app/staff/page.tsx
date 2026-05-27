@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { apiFetch } from '@/lib/api';
 import {
   format,
@@ -16,11 +17,13 @@ import {
   subMonths,
   parseISO,
   startOfWeek,
-  endOfWeek
+  endOfWeek,
+  addDays
 } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import DatePicker, { registerLocale } from 'react-datepicker';
+import DatePicker, { registerLocale, setDefaultLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import Select from 'react-select';
 import {
   Calendar as CalendarIcon,
   DollarSign,
@@ -28,6 +31,7 @@ import {
   Server,
   CheckCircle2,
   XCircle,
+  X,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
@@ -35,20 +39,74 @@ import {
   Download,
   Loader2,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  Filter,
+  SlidersHorizontal,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 
 registerLocale('vi', vi);
+setDefaultLocale('vi');
+
+const selectStyles = {
+  control: (base: any, state: any) => ({
+    ...base,
+    backgroundColor: '#0f172a',
+    borderColor: state.isFocused ? '#22d3ee' : '#1e293b',
+    color: 'white',
+    minHeight: '40px',
+    borderRadius: '8px',
+    fontSize: '14px',
+    boxShadow: state.isFocused ? '0 0 0 1px rgba(34, 211, 238, 0.5)' : 'none',
+    '&:hover': { borderColor: state.isFocused ? '#22d3ee' : '#334155' }
+  }),
+  menu: (base: any) => ({
+    ...base,
+    backgroundColor: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: '8px',
+    zIndex: 9999
+  }),
+  menuPortal: (base: any) => ({ ...base, zIndex: 9999 }),
+  option: (base: any, state: any) => ({
+    ...base,
+    backgroundColor: state.isSelected ? '#0891b2' : state.isFocused ? '#1e293b' : 'transparent',
+    color: 'white',
+    fontSize: '14px',
+    cursor: 'pointer',
+    '&:active': { backgroundColor: '#0e7490' }
+  }),
+  multiValue: (base: any) => ({
+    ...base,
+    backgroundColor: '#1e293b',
+    borderRadius: '6px',
+  }),
+  multiValueLabel: (base: any) => ({
+    ...base,
+    color: '#22d3ee',
+  }),
+  multiValueRemove: (base: any) => ({
+    ...base,
+    color: '#ef4444',
+    '&:hover': {
+      backgroundColor: '#f87171',
+      color: 'white',
+    },
+  }),
+  singleValue: (base: any) => ({ ...base, color: 'white' }),
+  placeholder: (base: any) => ({ ...base, color: '#64748b' })
+};
 
 const formatWeekDayLabel = (nameOfDay: string) => {
   const cleanName = nameOfDay.toLowerCase().trim();
   if (cleanName.includes('chủ nhật') || cleanName.includes('cn') || cleanName.includes('sun')) return 'CN';
-  if (cleanName.includes('th 2') || cleanName.includes('t2') || cleanName.includes('2') || cleanName.includes('hai')) return 'T2';
-  if (cleanName.includes('th 3') || cleanName.includes('t3') || cleanName.includes('3') || cleanName.includes('ba')) return 'T3';
-  if (cleanName.includes('th 4') || cleanName.includes('t4') || cleanName.includes('4') || cleanName.includes('tư') || cleanName.includes('tu')) return 'T4';
-  if (cleanName.includes('th 5') || cleanName.includes('t5') || cleanName.includes('5') || cleanName.includes('năm') || cleanName.includes('nam')) return 'T5';
-  if (cleanName.includes('th 6') || cleanName.includes('t6') || cleanName.includes('6') || cleanName.includes('sáu') || cleanName.includes('sau')) return 'T6';
-  if (cleanName.includes('th 7') || cleanName.includes('t7') || cleanName.includes('7') || cleanName.includes('bảy') || cleanName.includes('bay')) return 'T7';
+  if (cleanName.includes('bảy') || cleanName.includes('bay') || cleanName.includes('sat') || cleanName.includes('t7') || cleanName.includes('7')) return 'T7';
+  if (cleanName.includes('hai') || cleanName.includes('mon') || cleanName.includes('t2') || cleanName.includes('2')) return 'T2';
+  if (cleanName.includes('ba') || cleanName.includes('tue') || cleanName.includes('t3') || cleanName.includes('3')) return 'T3';
+  if (cleanName.includes('tư') || cleanName.includes('tu') || cleanName.includes('wed') || cleanName.includes('t4') || cleanName.includes('4')) return 'T4';
+  if (cleanName.includes('năm') || cleanName.includes('nam') || cleanName.includes('thu') || cleanName.includes('t5') || cleanName.includes('5')) return 'T5';
+  if (cleanName.includes('sáu') || cleanName.includes('sau') || cleanName.includes('fri') || cleanName.includes('t6') || cleanName.includes('6')) return 'T6';
   return nameOfDay;
 };
 
@@ -108,7 +166,48 @@ export default function StaffPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
   // Navigation states
-  const [activeTab, setActiveTab] = useState<'schedule' | 'payroll'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'matrix'>('matrix');
+
+  // Matrix View states
+  const [servers, setServers] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [matrixAssignments, setMatrixAssignments] = useState<any[]>([]);
+  const [selectedServerFilter, setSelectedServerFilter] = useState<string>('all');
+  const [selectedUserFilter, setSelectedUserFilter] = useState<string>('all');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [matrixDate, setMatrixDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [isMatrixLoading, setIsMatrixLoading] = useState(false);
+  const [menuPortalTarget, setMenuPortalTarget] = useState<HTMLElement | null>(null);
+
+  const [selectedMatrixCell, setSelectedMatrixCell] = useState<{ shift: any; dateStr: string; cellAssigns: any[] } | null>(null);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+
+  const handleCellClick = (shift: any, day: Date, cellAssigns: any[]) => {
+    const targetDate = getDatabaseWorkDate(shift, day);
+    const dateStr = format(targetDate, 'yyyy-MM-dd');
+    setSelectedMatrixCell({
+      shift,
+      dateStr,
+      cellAssigns
+    });
+    setIsDetailDialogOpen(true);
+  };
+
+  useEffect(() => {
+    setMenuPortalTarget(document.body);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
 
   // Schedule states
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
@@ -186,13 +285,90 @@ export default function StaffPage() {
     }
   }, [payrollStartDate, payrollEndDate, API_URL]);
 
+  // Fetch matrix scheduling data for staff overview
+  const fetchMatrixData = useCallback(async () => {
+    setIsMatrixLoading(true);
+    try {
+      const startStr = format(matrixDate, 'yyyy-MM-dd');
+      const endStr = format(addDays(matrixDate, 7), 'yyyy-MM-dd');
+
+      const [serversRes, shiftsRes, usersRes, assignRes] = await Promise.all([
+        apiFetch(`${API_URL}/servers`),
+        apiFetch(`${API_URL}/shifts?week_start_date=${startStr}`),
+        apiFetch(`${API_URL}/users`),
+        apiFetch(`${API_URL}/shifts/assignments?start_date=${startStr}&end_date=${endStr}`)
+      ]);
+
+      if (serversRes.ok) setServers(await serversRes.json());
+      if (shiftsRes.ok) setShifts(await shiftsRes.json());
+      if (usersRes.ok) setUsers(await usersRes.json());
+      if (assignRes.ok) setMatrixAssignments(await assignRes.json());
+    } catch (e) {
+      console.error('Failed to fetch matrix scheduling data:', e);
+    } finally {
+      setIsMatrixLoading(false);
+    }
+  }, [API_URL, matrixDate]);
+
   useEffect(() => {
     if (activeTab === 'schedule') {
       fetchMyShifts();
+    } else if (activeTab === 'matrix') {
+      fetchMatrixData();
     } else {
       fetchMyPayroll();
     }
-  }, [activeTab, fetchMyShifts, fetchMyPayroll]);
+  }, [activeTab, fetchMyShifts, fetchMatrixData, fetchMyPayroll]);
+
+  useEffect(() => {
+    if (activeTab === 'matrix') {
+      fetchMatrixData();
+    }
+  }, [matrixDate, fetchMatrixData, activeTab]);
+
+  // Compute 8 days: from Monday of selected week to Monday of next week
+  const weekDays = Array.from({ length: 8 }).map((_, i) => addDays(matrixDate, i));
+
+  // Helper: check if a shift+date combo belongs to the current week
+  const isShiftInCurrentWeek = useCallback((shift: any, day: Date): boolean => {
+    const weekStartMon = matrixDate;
+    const nextWeekMon = addDays(weekStartMon, 7);
+    const [sh, sm] = (shift.start_time || '00:00').split(':').map(Number);
+    const cellDate = new Date(day);
+    cellDate.setHours(sh, sm, 0, 0);
+    const weekStart = new Date(weekStartMon);
+    weekStart.setHours(7, 0, 0, 0);
+    const weekEnd = new Date(nextWeekMon);
+    weekEnd.setHours(7, 0, 0, 0);
+    return cellDate >= weekStart && cellDate < weekEnd;
+  }, [matrixDate]);
+
+  const getDatabaseWorkDate = useCallback((shift: any, day: Date): Date => {
+    return day;
+  }, []);
+
+  const filteredShifts = shifts.filter((shift: any) => {
+    // 1. Filter by Server
+    if (selectedServerFilter !== 'all' && String(shift.server_id) !== selectedServerFilter) {
+      return false;
+    }
+    
+    // 2. Filter by User/Staff
+    if (selectedUserFilter !== 'all') {
+      const hasAssignmentForUser = matrixAssignments.some((a: any) => {
+        const isSameShift = a.shift_id === shift.id;
+        const isSameUser = String(a.user_id) === selectedUserFilter;
+        const dateStr = format(new Date(a.work_date), 'yyyy-MM-dd');
+        const isInWeek = weekDays.some(day => format(getDatabaseWorkDate(shift, day), 'yyyy-MM-dd') === dateStr);
+        return isSameShift && isSameUser && isInWeek;
+      });
+      if (!hasAssignmentForUser) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
 
   // Calendar calculations
   const monthStart = startOfMonth(currentDate);
@@ -287,7 +463,7 @@ export default function StaffPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 p-3 sm:p-6 font-sans selection:bg-cyan-500/30">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className={`${activeTab === 'matrix' ? 'max-w-7xl' : 'max-w-4xl'} mx-auto space-y-6`}>
 
         {/* Header Block */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-800 pb-4 gap-4">
@@ -302,22 +478,22 @@ export default function StaffPage() {
         {/* Tab Selection */}
         <div className="flex border-b border-slate-850 gap-2">
           <button
+            onClick={() => setActiveTab('matrix')}
+            className={`pb-3 text-xs sm:text-sm font-semibold tracking-wider transition-all border-b-2 px-4 flex items-center gap-1.5 ${activeTab === 'matrix'
+              ? 'border-cyan-400 text-cyan-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+          >
+            <CalendarIcon className="w-4 h-4" /> BẢNG CHUNG
+          </button>
+          <button
             onClick={() => setActiveTab('schedule')}
             className={`pb-3 text-xs sm:text-sm font-semibold tracking-wider transition-all border-b-2 px-4 flex items-center gap-1.5 ${activeTab === 'schedule'
               ? 'border-cyan-400 text-cyan-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
           >
-            <CalendarIcon className="w-4 h-4" /> LỊCH LÀM VIỆC
-          </button>
-          <button
-            onClick={() => setActiveTab('payroll')}
-            className={`pb-3 text-xs sm:text-sm font-semibold tracking-wider transition-all border-b-2 px-4 flex items-center gap-1.5 ${activeTab === 'payroll'
-              ? 'border-cyan-400 text-cyan-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-          >
-            <DollarSign className="w-4 h-4" /> BẢNG LƯƠNG
+            <CalendarIcon className="w-4 h-4" /> LỊCH CỦA TÔI
           </button>
         </div>
 
@@ -491,214 +667,436 @@ export default function StaffPage() {
           </div>
         )}
 
-        {/* TAB 2: PAYROLL */}
-        {activeTab === 'payroll' && (
-          <div className="space-y-4">
-            {/* Date Selectors Block */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-slate-900/50 border border-slate-800 p-4 rounded-xl gap-4 backdrop-blur-xl">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 p-1.5 rounded-xl relative z-40">
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
-                    <CalendarIcon className="w-3.5 h-3.5 text-cyan-400" />
-                    <DatePicker
-                      selected={payrollStartDate ? parseISO(payrollStartDate) : null}
-                      onChange={(date: Date | null) => {
-                        if (date) setPayrollStartDate(format(date, 'yyyy-MM-dd'));
-                      }}
-                      dateFormat="dd/MM/yyyy"
-                      locale="vi"
-                      formatWeekDay={formatWeekDayLabel}
-                      portalId="staff-payroll-datepicker-portal"
-                      popperClassName="staff-payroll-datepicker-popper"
-                      popperPlacement="bottom-start"
-                      className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
-                    />
-                  </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-800/50 transition-colors">
-                    <CalendarIcon className="w-3.5 h-3.5 text-cyan-400" />
-                    <DatePicker
-                      selected={payrollEndDate ? parseISO(payrollEndDate) : null}
-                      onChange={(date: Date | null) => {
-                        if (date) setPayrollEndDate(format(date, 'yyyy-MM-dd'));
-                      }}
-                      dateFormat="dd/MM/yyyy"
-                      locale="vi"
-                      formatWeekDay={formatWeekDayLabel}
-                      portalId="staff-payroll-datepicker-portal"
-                      popperClassName="staff-payroll-datepicker-popper"
-                      popperPlacement="bottom-start"
-                      className="bg-transparent text-slate-100 text-xs font-semibold border-none outline-none focus:ring-0 w-22 text-center cursor-pointer hover:text-cyan-400 transition-colors"
-                    />
-                  </div>
-                </div>
+        {/* TAB 3: MATRIX VIEW (READ-ONLY) */}
+        {activeTab === 'matrix' && (
+          <div className="space-y-6">
+            {/* Week Selector Toolbar */}
+            <div className="relative z-40 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/50 border border-slate-800/80 p-4 rounded-xl backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-slate-400">Tuần phân ca:</span>
+                <DatePicker
+                  selected={matrixDate}
+                  startDate={matrixDate}
+                  endDate={addDays(matrixDate, 7)}
+                  onChange={(date: Date | null) => {
+                    if (date) setMatrixDate(startOfWeek(date, { weekStartsOn: 1 }));
+                  }}
+                  showWeekPicker
+                  value={`Tuần: ${format(matrixDate, 'dd/MM')} - ${format(addDays(matrixDate, 7), 'dd/MM')}`}
+                  formatWeekDay={formatWeekDayLabel}
+                  portalId="shift-week-datepicker-portal"
+                  popperClassName="shift-week-datepicker-popper"
+                  popperPlacement="bottom-start"
+                  className="flex h-10 w-52 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-cyan-400 font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+                />
               </div>
 
-              <div className="text-xs text-slate-400 font-mono uppercase bg-slate-950/40 border border-slate-800/50 px-3 py-2 rounded-lg text-center">
-                📊 Kết quả tính toán tự động
+              <div className="text-xs text-slate-500 font-mono">
+                Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Thứ 2 sau ({format(weekDays[7], 'dd/MM')}) (7h sáng → 6h59 sáng hôm sau)
               </div>
             </div>
 
-            {/* Payroll Summary Cards */}
-            {isPayrollLoading ? (
-              <div className="h-48 flex items-center justify-center text-cyan-400">
-                <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                <span className="text-xs font-mono">CALCULATING_PAYROLL...</span>
-              </div>
-            ) : !payrollData ? (
-              <div className="h-32 flex items-center justify-center text-slate-500 text-xs font-mono">
-                Không có dữ liệu bảng lương trong khoảng thời gian này.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Total Salary Card */}
-                <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"></div>
-                  <CardHeader className="pb-1.5">
-                    <CardDescription className="text-slate-400 text-xs font-mono uppercase tracking-widest flex items-center gap-1.5">
-                      <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
-                      TỔNG THỰC NHẬN CÁ NHÂN
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="pb-4">
-                    <div className="text-3xl sm:text-4xl font-extrabold text-emerald-400 tracking-tight">
-                      {formatVND(payrollData.totalSalary)}
-                    </div>
-                    <div className="text-[10px] sm:text-xs text-slate-500 mt-1.5 font-mono">
-                      Ca hoàn thành: {payrollData.completedShifts} / {payrollData.totalShifts} | Ca vắng: {payrollData.absentShifts}
-                    </div>
-                  </CardContent>
-                </Card>
+            {/* Matrix Table */}
+            <Card className={`transition-all duration-200 overflow-hidden shadow-2xl relative ${
+              isFullscreen
+                ? 'fixed inset-0 z-50 w-screen h-screen bg-slate-950 border-none p-0 flex flex-col rounded-none'
+                : 'bg-slate-900/40 border border-slate-800 rounded-xl'
+            }`}>
+              {isFullscreen && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsFullscreen(false)}
+                  className="absolute top-4 right-4 h-8 w-8 z-50 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border border-slate-800 dark:border-slate-200 hover:bg-slate-800 dark:hover:bg-slate-200 shadow-lg rounded-full flex items-center justify-center transition-all"
+                  title="Thoát toàn màn hình (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              )}
 
-                {/* Salary breakdown cards grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                    <div className="text-slate-400 text-[10px] font-mono leading-none">LƯƠNG CƠ BẢN</div>
-                    <div className="text-sm sm:text-base font-bold text-slate-200">{formatVND(payrollData.totalBaseSalary)}</div>
-                  </Card>
-                  <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                    <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP ĐÊM</div>
-                    <div className="text-sm sm:text-base font-bold text-cyan-400">{formatVND(payrollData.totalNightBonus)}</div>
-                  </Card>
-                  <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                    <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP CUỐI TUẦN</div>
-                    <div className="text-sm sm:text-base font-bold text-indigo-400">{formatVND(payrollData.totalWeekendBonus)}</div>
-                  </Card>
-                  <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                    <div className="text-slate-400 text-[10px] font-mono leading-none">PHU CAP KHAC</div>
-                    <div className="text-sm sm:text-base font-bold text-violet-400">{formatVND(payrollData.totalOtherAllowance)}</div>
-                  </Card>
-                </div>
-
-                <div className="flex items-start gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[11px] sm:text-xs text-cyan-700 dark:text-cyan-400">
-                  <AlertCircle className="w-4 h-4 text-cyan-700 dark:text-cyan-400 flex-shrink-0 mt-0.5" />
+              {!isFullscreen && (
+                <CardHeader className="pb-3 border-b border-slate-800/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <div className="font-semibold">Chi tiết bên dưới chỉ hiển thị các ca đã được tính lương.</div>
-                    <div className="text-cyan-700 dark:text-cyan-400">
-                      Ca làm hôm nay sẽ được hệ thống tính từ ngày hôm sau nên chưa xuất hiện trong danh sách này.
-                      {pendingPayrollDetailCount > 0 ? ` Có ${pendingPayrollDetailCount} ca trong khoảng ngày đang chờ đến ngày tính lương.` : ''}
-                    </div>
+                    <CardTitle className="text-lg font-bold text-slate-200 flex items-center gap-2">
+                      <CalendarIcon className="w-5 h-5 text-cyan-400" /> Bảng Phân Phối Ca Tuần
+                    </CardTitle>
+                    <CardDescription>Tổng quan phân phối lịch làm các server game trong tuần (Chế độ xem).</CardDescription>
                   </div>
-                </div>
+                  
+                  {/* Filters */}
+                  <div className="flex items-center gap-2 z-45">
+                    {/* Desktop Filters (md and up) */}
+                    <div className="hidden md:flex items-center gap-3">
+                      {/* Server Select Filter */}
+                      <div className="w-48 text-slate-900">
+                        <Select
+                          instanceId="matrix-server-filter"
+                          placeholder="Lọc theo Server"
+                          options={[
+                            { value: 'all', label: '⚡ Tất cả Server' },
+                            ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
+                          ]}
+                          styles={selectStyles}
+                          value={[
+                            { value: 'all', label: '⚡ Tất cả Server' },
+                            ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
+                          ].find(o => o.value === selectedServerFilter)}
+                          onChange={(opt: any) => setSelectedServerFilter(opt ? opt.value : 'all')}
+                          menuPortalTarget={menuPortalTarget}
+                        />
+                      </div>
 
-                {/* Desktop Shifts Breakdown Table */}
-                <Card className="hidden sm:block bg-slate-900/40 border-slate-800 overflow-hidden">
-                  <CardHeader className="p-4 border-b border-slate-850">
-                    <CardTitle className="text-sm font-bold text-slate-300 font-mono">CHI TIẾT LƯƠNG TỪNG CA</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <Table>
-                      <TableHeader className="bg-slate-950/40">
-                        <TableRow className="border-slate-850">
-                          <TableHead className="text-[10px] font-mono uppercase text-slate-400 w-24">Ngày làm</TableHead>
-                          <TableHead className="text-[10px] font-mono uppercase text-slate-400">Server / Ca</TableHead>
-                          <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Lương ca</TableHead>
-                          <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp đêm</TableHead>
-                          <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp CT</TableHead>
-                          <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phu cap khac</TableHead>
-                          <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Tổng nhận</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {payablePayrollDetails.map((detail, idx) => (
-                          <TableRow key={idx} className="border-slate-850 hover:bg-slate-800/10">
-                            <TableCell className="text-xs font-mono text-slate-300">
-                              {format(parseISO(detail.workDate), 'dd/MM/yyyy')}
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-xs font-bold text-slate-200">{detail.serverName}</div>
-                              <div className="text-[10px] text-slate-500">Ca: {detail.shiftName} ({detail.startTime})</div>
-                            </TableCell>
-                            <TableCell className="text-xs font-mono text-slate-300 text-right">{formatVND(detail.baseSalary)}</TableCell>
-                            <TableCell className="text-xs font-mono text-cyan-400 text-right">{formatVND(detail.nightBonus)}</TableCell>
-                            <TableCell className="text-xs font-mono text-indigo-400 text-right">{formatVND(detail.weekendBonus)}</TableCell>
-                            <TableCell className="text-xs font-mono text-violet-400 text-right">{formatVND(detail.otherAllowance)}</TableCell>
-                            <TableCell className="text-xs font-bold font-mono text-emerald-400 text-right">{formatVND(detail.totalSalary)}</TableCell>
-                          </TableRow>
-                        ))}
-                        {payablePayrollDetails.length === 0 && (
-                          <TableRow className="border-slate-850">
-                            <TableCell colSpan={7} className="h-20 text-center text-xs text-slate-500 font-mono">
-                              Chưa có ca nào đủ điều kiện tính lương trong khoảng ngày này.
-                            </TableCell>
-                          </TableRow>
+                      {/* Staff Select Filter */}
+                      <div className="w-52 text-slate-900">
+                        <Select
+                          instanceId="matrix-user-filter"
+                          placeholder="Lọc theo Nhân viên"
+                          options={[
+                            { value: 'all', label: '👤 Tất cả Nhân viên' },
+                            ...users.filter((u: any) => u.role === 'STAFF').map((u: any) => ({ value: String(u.id), label: u.full_name }))
+                          ]}
+                          styles={selectStyles}
+                          value={[
+                            { value: 'all', label: '👤 Tất cả Nhân viên' },
+                            ...users.filter((u: any) => u.role === 'STAFF').map((u: any) => ({ value: String(u.id), label: u.full_name }))
+                          ].find(o => o.value === selectedUserFilter)}
+                          onChange={(opt: any) => setSelectedUserFilter(opt ? opt.value : 'all')}
+                          menuPortalTarget={menuPortalTarget}
+                        />
+                      </div>
+
+                      {/* Clear Filters Button (Desktop) */}
+                      {(selectedServerFilter !== 'all' || selectedUserFilter !== 'all') && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setSelectedServerFilter('all');
+                            setSelectedUserFilter('all');
+                          }}
+                          className="h-10 px-3 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-1.5 transition-all text-xs font-semibold shrink-0"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          Xóa lọc
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Mobile Filter Button (below md) */}
+                    <div className="flex md:hidden items-center gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setIsMobileFilterOpen(true)}
+                        className={`h-10 px-3.5 rounded-lg flex items-center gap-2 border text-xs font-semibold transition-all relative ${
+                          selectedServerFilter !== 'all' || selectedUserFilter !== 'all'
+                            ? 'bg-cyan-50 dark:bg-cyan-950/20 border-cyan-300 dark:border-cyan-800 text-cyan-600 dark:text-cyan-400'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:text-cyan-400 hover:bg-slate-900'
+                        }`}
+                      >
+                        <Filter className="w-4 h-4" />
+                        Lọc lịch
+                        {(selectedServerFilter !== 'all' || selectedUserFilter !== 'all') && (
+                          <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-cyan-500 text-white dark:text-slate-950 text-[9px] font-bold rounded-full flex items-center justify-center shadow-lg border border-white dark:border-slate-950 animate-pulse">
+                            !
+                          </span>
                         )}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
+                      </Button>
 
-                {/* Mobile Shifts Breakdown List */}
-                <div className="block sm:hidden space-y-3">
-                  <h3 className="text-xs uppercase font-mono tracking-wider text-slate-400 px-1">Chi tiết lương từng ca</h3>
-                  {payablePayrollDetails.map((detail, idx) => (
-                    <Card key={idx} className="bg-slate-900/40 border-slate-850">
-                      <CardContent className="p-3 space-y-2">
-                        <div className="flex justify-between items-center pb-2 border-b border-slate-850">
-                          <span className="text-xs font-mono font-semibold text-slate-300">
-                            {format(parseISO(detail.workDate), 'dd/MM/yyyy')}
-                          </span>
-                          <span className="text-xs font-bold font-mono text-emerald-400">
-                            + {formatVND(detail.totalSalary)}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 font-mono">
-                          <div>
-                            <span className="text-slate-500 block uppercase">SERVER / CA</span>
-                            <span className="font-bold text-slate-300">{detail.serverName} - {detail.shiftName} ({detail.startTime})</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block uppercase">LƯƠNG CƠ BẢN</span>
-                            <span className="text-slate-300">{formatVND(detail.baseSalary)}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block uppercase">PHỤ CẤP ĐÊM</span>
-                            <span className="text-cyan-400">{formatVND(detail.nightBonus)}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block uppercase">PHỤ CẤP CUỐI TUẦN</span>
-                            <span className="text-indigo-400">{formatVND(detail.weekendBonus)}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 block uppercase">PHU CAP KHAC</span>
-                            <span className="text-violet-400">{formatVND(detail.otherAllowance)}</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                  {payablePayrollDetails.length === 0 && (
-                    <Card className="bg-slate-900/40 border-slate-850">
-                      <CardContent className="p-4 text-center text-xs text-slate-500 font-mono">
-                        Chưa có ca nào đủ điều kiện tính lương trong khoảng ngày này.
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              </div>
-            )}
+                      {/* Clear Filters Button (Mobile quick action) */}
+                      {(selectedServerFilter !== 'all' || selectedUserFilter !== 'all') && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedServerFilter('all');
+                            setSelectedUserFilter('all');
+                          }}
+                          className="h-10 w-10 text-red-500 hover:text-red-450 hover:bg-red-500/10 rounded-lg flex items-center justify-center shrink-0"
+                          title="Xóa lọc nhanh"
+                        >
+                          <XCircle className="w-4.5 h-4.5" />
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Fullscreen Toggle Button (Visible everywhere) */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsFullscreen(!isFullscreen)}
+                      className="h-10 w-10 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-center transition-all shrink-0"
+                      title={isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
+                    >
+                      {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </CardHeader>
+              )}
+              <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+                {isMatrixLoading ? (
+                  <div className="text-center py-12 text-cyan-400 space-y-3">
+                    <Loader2 className="w-8 h-8 mx-auto animate-spin" />
+                    <p className="text-sm font-mono">LOADING_MATRIX_DATA...</p>
+                  </div>
+                ) : shifts.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500 space-y-3">
+                    <AlertCircle className="w-10 h-10 mx-auto text-slate-700" />
+                    <p className="text-sm">Chưa có khung giờ/ca làm nào được tạo cho tuần này.</p>
+                  </div>
+                ) : (
+                  <div className={isFullscreen
+                    ? "flex-1 min-h-0 flex flex-col [&_[data-slot=table-container]]:flex-1 [&_[data-slot=table-container]]:min-h-0 [&_[data-slot=table-container]]:overflow-auto [&_[data-slot=table-container]]:max-h-full"
+                    : "[&_[data-slot=table-container]]:max-h-[70vh] [&_[data-slot=table-container]]:overflow-auto"
+                  }>
+                    {filteredShifts.length === 0 ? (
+                      <div className="text-center py-16 text-slate-500 space-y-3 bg-white dark:bg-slate-950">
+                        <AlertCircle className="w-10 h-10 mx-auto text-slate-700" />
+                        <p className="text-sm font-mono">Không có ca làm nào khớp với bộ lọc hiện tại.</p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader className="bg-slate-100 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800">
+                          <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-800">
+                            <TableHead className="sticky top-0 z-30 w-56 text-slate-700 dark:text-slate-300 font-bold border-r border-slate-200 dark:border-slate-800/80 bg-slate-100 dark:bg-slate-950 transform-gpu">SERVER / CA LÀM</TableHead>
+                            {weekDays.map((day, index) => {
+                              const isToday = format(new Date(), 'yyyy-MM-dd') === format(day, 'yyyy-MM-dd');
+                              return (
+                                <TableHead key={index} className={`sticky top-0 z-20 text-center font-bold min-w-[120px] transition-colors ${isToday ? 'bg-cyan-50 dark:bg-cyan-950/20 text-cyan-600 dark:text-cyan-300' : 'bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-300'} transform-gpu`}>
+                                  <div>{format(day, 'EEEE', { locale: vi }).replace('Thứ', 'T')}</div>
+                                  <div className="text-xs font-mono mt-0.5 opacity-80">{format(day, 'dd/MM')}</div>
+                                </TableHead>
+                              );
+                            })}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredShifts.map((shift: any) => (
+                            <TableRow key={shift.id} className="group border-slate-800/60 hover:bg-slate-900/30 transition-colors">
+                              <TableCell
+                                className="font-medium border-r border-slate-200 dark:border-slate-800/80 py-3 pr-4 bg-white dark:bg-slate-950 group-hover:bg-white dark:group-hover:bg-[#0f172a] transition-colors group/cell-header"
+                              >
+                                <div className="flex items-center justify-between gap-2 w-full">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className="text-sm font-semibold text-cyan-600 dark:text-cyan-400 tracking-tight truncate">
+                                      {shift.server?.name || 'N/A'}
+                                    </span>
+                                    {shift.name && (
+                                      <span className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate">
+                                        ({shift.name})
+                                      </span>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="relative flex items-center shrink-0">
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-cyan-500" />
+                                      {shift.start_time}
+                                    </span>
+                                  </div>
+                                </div>
+                              </TableCell>
+
+                              {weekDays.map((day, idx) => {
+                                const targetDate = getDatabaseWorkDate(shift, day);
+                                const dateStr = format(targetDate, 'yyyy-MM-dd');
+                                const isCellInCurrentWeek = isShiftInCurrentWeek(shift, day);
+                                
+                                const cellAssigns = matrixAssignments.filter(
+                                  (a: any) => a.shift_id === shift.id && format(new Date(a.work_date), 'yyyy-MM-dd') === dateStr
+                                );
+
+                                return (
+                                  <TableCell
+                                    key={idx}
+                                    onClick={() => {
+                                      if (isCellInCurrentWeek) {
+                                        handleCellClick(shift, day, cellAssigns);
+                                      }
+                                    }}
+                                    className={`text-center p-2 border-r border-slate-800/30 relative group/cell min-h-[60px] transition-all ${
+                                      !isCellInCurrentWeek
+                                        ? 'bg-slate-900/30 dark:bg-slate-950/30 opacity-50 cursor-not-allowed'
+                                        : 'cursor-pointer hover:bg-cyan-500/5'
+                                    }`}
+                                  >
+                                    {!isCellInCurrentWeek ? (
+                                      <span className="text-xs text-slate-505 font-semibold select-none">—</span>
+                                    ) : cellAssigns.length === 0 ? (
+                                      <span className="text-xs text-red-500/40 font-semibold select-none">x</span>
+                                    ) : (
+                                      <div className="flex flex-col gap-1 items-center justify-center">
+                                        {cellAssigns.map((a: any) => (
+                                          <Badge
+                                            key={a.id}
+                                            variant="outline"
+                                            className="bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60 text-cyan-800 dark:text-cyan-300 text-[11px] px-2 py-0.5 max-w-[140px] truncate"
+                                          >
+                                            {a.user?.full_name}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
+
+        {/* DIALOG: VIEW CELL DETAILS MODAL FOR STAFF */}
+        <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+          <DialogContent className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-slate-200 dark:border-slate-800 rounded-xl sm:max-w-[460px]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                <CalendarIcon className="w-5.5 h-5.5 text-cyan-600 dark:text-cyan-400" /> Chi Tiết Ca làm
+              </DialogTitle>
+              <DialogDescription className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+                Thông tin phân lịch làm việc chi tiết.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-3 text-sm">
+              <div className="flex justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                <span className="text-slate-500 dark:text-slate-400">Server:</span>
+                <span className="font-semibold text-cyan-600 dark:text-cyan-400">{selectedMatrixCell?.shift?.server?.name || 'N/A'}</span>
+              </div>
+              {selectedMatrixCell?.shift?.name && (
+                <div className="flex justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                  <span className="text-slate-500 dark:text-slate-400">Mô tả ca:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{selectedMatrixCell.shift.name}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                <span className="text-slate-500 dark:text-slate-400">Ngày làm:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {selectedMatrixCell ? format(parseISO(selectedMatrixCell.dateStr), 'dd/MM/yyyy') : ''}
+                </span>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                <span className="text-slate-500 dark:text-slate-400">Giờ bắt đầu:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-500" />
+                  {selectedMatrixCell?.shift?.start_time}
+                </span>
+              </div>
+              <div className="space-y-2">
+                <span className="text-slate-500 dark:text-slate-400 block">Nhân sự tham gia làm:</span>
+                {selectedMatrixCell?.cellAssigns && selectedMatrixCell.cellAssigns.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 p-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-150 dark:border-slate-850 rounded-lg">
+                    {selectedMatrixCell.cellAssigns.map((a: any) => (
+                      <Badge
+                        key={a.id}
+                        variant="outline"
+                        className="bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800/60 text-cyan-700 dark:text-cyan-300 text-xs px-2.5 py-1 font-medium"
+                      >
+                        {a.user?.full_name}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-red-650 dark:text-red-400 italic bg-red-50 dark:bg-red-500/5 p-3 rounded-lg border border-red-200 dark:border-red-500/10">
+                    Chưa có nhân sự nào được phân công.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                onClick={() => setIsDetailDialogOpen(false)}
+                className="bg-cyan-500 hover:bg-cyan-600 text-white dark:text-slate-950 font-bold rounded-lg h-10 px-4 w-full"
+              >
+                Đóng
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* DIALOG: MOBILE FILTERS MODAL */}
+        <Dialog open={isMobileFilterOpen} onOpenChange={setIsMobileFilterOpen}>
+          <DialogContent className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white border-slate-200 dark:border-slate-800 rounded-xl sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                <SlidersHorizontal className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /> Bộ Lọc Lịch Làm
+              </DialogTitle>
+              <DialogDescription className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+                Chọn server hoặc nhân viên để lọc danh sách.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-3 text-sm">
+              <div className="space-y-1.5">
+                <label className="text-slate-500 dark:text-slate-400 font-medium block">Lọc theo Server:</label>
+                <div className="text-slate-900">
+                  <Select
+                    instanceId="matrix-server-filter-mobile"
+                    placeholder="Lọc theo Server"
+                    options={[
+                      { value: 'all', label: '⚡ Tất cả Server' },
+                      ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
+                    ]}
+                    styles={selectStyles}
+                    value={[
+                      { value: 'all', label: '⚡ Tất cả Server' },
+                      ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
+                    ].find(o => o.value === selectedServerFilter)}
+                    onChange={(opt: any) => setSelectedServerFilter(opt ? opt.value : 'all')}
+                    menuPortalTarget={menuPortalTarget}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-slate-500 dark:text-slate-400 font-medium block">Lọc theo Nhân viên:</label>
+                <div className="text-slate-900">
+                  <Select
+                    instanceId="matrix-user-filter-mobile"
+                    placeholder="Lọc theo Nhân viên"
+                    options={[
+                      { value: 'all', label: '👤 Tất cả Nhân viên' },
+                      ...users.filter((u: any) => u.role === 'STAFF').map((u: any) => ({ value: String(u.id), label: u.full_name }))
+                    ]}
+                    styles={selectStyles}
+                    value={[
+                      { value: 'all', label: '👤 Tất cả Nhân viên' },
+                      ...users.filter((u: any) => u.role === 'STAFF').map((u: any) => ({ value: String(u.id), label: u.full_name }))
+                    ].find(o => o.value === selectedUserFilter)}
+                    onChange={(opt: any) => setSelectedUserFilter(opt ? opt.value : 'all')}
+                    menuPortalTarget={menuPortalTarget}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="flex flex-col gap-2 mt-2">
+              {(selectedServerFilter !== 'all' || selectedUserFilter !== 'all') && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedServerFilter('all');
+                    setSelectedUserFilter('all');
+                  }}
+                  className="border-red-200 dark:border-red-900/30 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 font-semibold rounded-lg h-10 px-4 w-full"
+                >
+                  Xóa bộ lọc
+                </Button>
+              )}
+              <Button
+                onClick={() => setIsMobileFilterOpen(false)}
+                className="bg-cyan-500 hover:bg-cyan-600 text-white dark:text-slate-950 font-bold rounded-lg h-10 px-4 w-full"
+              >
+                Áp dụng
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

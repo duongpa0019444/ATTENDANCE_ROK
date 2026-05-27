@@ -177,9 +177,18 @@ export default function ShiftsPage() {
       document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
     }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
     return () => {
       document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isFullscreen]);
 
@@ -682,87 +691,101 @@ export default function ShiftsPage() {
           <div className="space-y-6">
 
             {/* Matrix Table */}
-            <Card className={`transition-all duration-200 overflow-hidden shadow-2xl ${
+            <Card className={`transition-all duration-200 overflow-hidden shadow-2xl relative ${
               isFullscreen
-                ? 'fixed inset-0 z-50 w-screen h-screen bg-white dark:bg-slate-950 border-none p-6 flex flex-col rounded-none'
+                ? 'fixed inset-0 z-50 w-screen h-screen bg-slate-950 border-none p-0 flex flex-col rounded-none'
                 : 'bg-slate-900/40 border border-slate-800 rounded-xl'
             }`}>
-              <CardHeader className="pb-3 border-b border-slate-800/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <CardTitle className="text-lg font-bold text-slate-200 flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-cyan-400" /> Bảng Phân Phối Ca Tuần
-                  </CardTitle>
-                  <CardDescription>Click vào từng ô giao nhau giữa Server/Ca và Ngày để phân ca cho nhân viên.</CardDescription>
-                </div>
-                
-                {/* Filters */}
-                <div className="flex flex-wrap items-center gap-3 z-40">
-                  {/* Server Select Filter */}
-                  <div className="w-48 text-slate-900">
-                    <Select
-                      instanceId="matrix-server-filter"
-                      placeholder="Lọc theo Server"
-                      options={[
-                        { value: 'all', label: '⚡ Tất cả Server' },
-                        ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
-                      ]}
-                      styles={selectStyles}
-                      value={[
-                        { value: 'all', label: '⚡ Tất cả Server' },
-                        ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
-                      ].find(o => o.value === selectedServerFilter)}
-                      onChange={(opt: any) => setSelectedServerFilter(opt ? opt.value : 'all')}
-                      menuPortalTarget={menuPortalTarget}
-                    />
-                  </div>
+              {isFullscreen && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsFullscreen(false)}
+                  className="absolute top-4 right-4 h-8 w-8 z-50 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border border-slate-800 dark:border-slate-200 hover:bg-slate-800 dark:hover:bg-slate-200 shadow-lg rounded-full flex items-center justify-center transition-all"
+                  title="Thoát toàn màn hình (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              )}
 
-                  {/* Staff Select Filter */}
-                  <div className="w-52 text-slate-900">
-                    <Select
-                      instanceId="matrix-user-filter"
-                      placeholder="Lọc theo Nhân viên"
-                      options={[
-                        { value: 'all', label: '👤 Tất cả Nhân viên' },
-                        ...users.map((u: any) => ({ value: String(u.id), label: u.full_name }))
-                      ]}
-                      styles={selectStyles}
-                      value={[
-                        { value: 'all', label: '👤 Tất cả Nhân viên' },
-                        ...users.map((u: any) => ({ value: String(u.id), label: u.full_name }))
-                      ].find(o => o.value === selectedUserFilter)}
-                      onChange={(opt: any) => setSelectedUserFilter(opt ? opt.value : 'all')}
-                      menuPortalTarget={menuPortalTarget}
-                    />
+              {!isFullscreen && (
+                <CardHeader className="pb-3 border-b border-slate-800/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-lg font-bold text-slate-200 flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-cyan-400" /> Bảng Phân Phối Ca Tuần
+                    </CardTitle>
+                    <CardDescription>Click vào từng ô giao nhau giữa Server/Ca và Ngày để phân ca cho nhân viên.</CardDescription>
                   </div>
+                  
+                  {/* Filters */}
+                  <div className="flex flex-wrap items-center gap-3 z-40">
+                    {/* Server Select Filter */}
+                    <div className="w-48 text-slate-900">
+                      <Select
+                        instanceId="matrix-server-filter"
+                        placeholder="Lọc theo Server"
+                        options={[
+                          { value: 'all', label: '⚡ Tất cả Server' },
+                          ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
+                        ]}
+                        styles={selectStyles}
+                        value={[
+                          { value: 'all', label: '⚡ Tất cả Server' },
+                          ...servers.map((s: any) => ({ value: String(s.id), label: `Server ${s.name}` }))
+                        ].find(o => o.value === selectedServerFilter)}
+                        onChange={(opt: any) => setSelectedServerFilter(opt ? opt.value : 'all')}
+                        menuPortalTarget={menuPortalTarget}
+                      />
+                    </div>
 
-                  {/* Clear Filters Button (only shows when filters are active) */}
-                  {(selectedServerFilter !== 'all' || selectedUserFilter !== 'all') && (
+                    {/* Staff Select Filter */}
+                    <div className="w-52 text-slate-900">
+                      <Select
+                        instanceId="matrix-user-filter"
+                        placeholder="Lọc theo Nhân viên"
+                        options={[
+                          { value: 'all', label: '👤 Tất cả Nhân viên' },
+                          ...users.map((u: any) => ({ value: String(u.id), label: u.full_name }))
+                        ]}
+                        styles={selectStyles}
+                        value={[
+                          { value: 'all', label: '👤 Tất cả Nhân viên' },
+                          ...users.map((u: any) => ({ value: String(u.id), label: u.full_name }))
+                        ].find(o => o.value === selectedUserFilter)}
+                        onChange={(opt: any) => setSelectedUserFilter(opt ? opt.value : 'all')}
+                        menuPortalTarget={menuPortalTarget}
+                      />
+                    </div>
+
+                    {/* Clear Filters Button (only shows when filters are active) */}
+                    {(selectedServerFilter !== 'all' || selectedUserFilter !== 'all') && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setSelectedServerFilter('all');
+                          setSelectedUserFilter('all');
+                        }}
+                        className="h-10 px-3 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-1.5 transition-all text-xs font-semibold shrink-0"
+                      >
+                        <X className="w-4 h-4" />
+                        Xóa lọc
+                      </Button>
+                    )}
+
+                    {/* Fullscreen Toggle Button */}
                     <Button
                       variant="ghost"
-                      onClick={() => {
-                        setSelectedServerFilter('all');
-                        setSelectedUserFilter('all');
-                      }}
-                      className="h-10 px-3 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-1.5 transition-all text-xs font-semibold shrink-0"
+                      size="icon"
+                      onClick={() => setIsFullscreen(!isFullscreen)}
+                      className="h-10 w-10 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-center transition-all shrink-0"
+                      title={isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
                     >
-                      <X className="w-4 h-4" />
-                      Xóa lọc
+                      {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
                     </Button>
-                  )}
-
-                  {/* Fullscreen Toggle Button */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="h-10 w-10 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg flex items-center justify-center transition-all shrink-0"
-                    title={isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
-                  >
-                    {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 flex-1 min-h-0">
+                  </div>
+                </CardHeader>
+              )}
+              <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
                 {shifts.length === 0 ? (
                   <div className="text-center py-12 text-slate-500 space-y-3">
                     <ShieldAlert className="w-10 h-10 mx-auto text-slate-700" />
@@ -770,7 +793,7 @@ export default function ShiftsPage() {
                   </div>
                 ) : (
                   <div className={isFullscreen
-                    ? "[&_[data-slot=table-container]]:max-h-[calc(100vh-180px)] [&_[data-slot=table-container]]:overflow-auto"
+                    ? "flex-1 min-h-0 flex flex-col [&_[data-slot=table-container]]:flex-1 [&_[data-slot=table-container]]:min-h-0 [&_[data-slot=table-container]]:overflow-auto [&_[data-slot=table-container]]:max-h-full"
                     : "[&_[data-slot=table-container]]:max-h-[70vh] [&_[data-slot=table-container]]:overflow-auto"
                   }>
                     {filteredShifts.length === 0 ? (

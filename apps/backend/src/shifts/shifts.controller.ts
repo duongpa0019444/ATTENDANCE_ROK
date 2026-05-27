@@ -12,6 +12,7 @@ export class ShiftsController {
   constructor(private readonly shiftsService: ShiftsService) {}
 
   @Get()
+  @Roles(Role.ADMIN, Role.MANAGER, Role.STAFF)
   findAllShifts(@Query('week_start_date') weekStartDate?: string) {
     return this.shiftsService.findAllShifts(weekStartDate);
   }
@@ -37,6 +38,7 @@ export class ShiftsController {
   }
 
   @Get('assignments')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.STAFF)
   getAssignments(@Query() query?: any) {
     return this.shiftsService.getAssignments(query);
   }
