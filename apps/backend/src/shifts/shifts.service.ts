@@ -316,7 +316,7 @@ export class ShiftsService {
   async syncAssignments(data: { shift_id: string; work_date: string; user_ids: string[] }) {
     const workDate = new Date(data.work_date);
     if (await this.prisma.isDateLocked(workDate)) {
-      throw new BadRequestException('Ngày phân ca này đã được chốt bảng lương. Không thể phân công nhân sự.');
+      throw new BadRequestException('Ngày phân ca này đã được chốt bảng lương. Không thể phân công nông dân.');
     }
     const today = new Date();
     today.setHours(0, 0, 0, 0);

@@ -134,7 +134,7 @@ export class SchedulerService {
             });
 
             // Alert manager via Telegram
-            const alertMsg = `⚠️ CẢNH BÁO: Nhân sự [${assignment.user.full_name}] chưa xác nhận ca làm [${shiftDisplayName}] ngày ${dateStr} (bắt đầu lúc ${assignment.shift.start_time}).`;
+            const alertMsg = `⚠️ CẢNH BÁO: Nông dân [${assignment.user.full_name}] chưa xác nhận ca làm [${shiftDisplayName}] ngày ${dateStr} (bắt đầu lúc ${assignment.shift.start_time}).`;
             await this.queueManagersNotification(alertMsg);
 
             // Realtime Socket warning event

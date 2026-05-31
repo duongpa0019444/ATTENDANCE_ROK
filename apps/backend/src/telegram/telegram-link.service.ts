@@ -24,7 +24,7 @@ export class TelegramLinkService {
 
     if (!user) {
       throw new HttpException(
-        `Không tìm thấy nhân sự với username "${username}"`,
+        `Không tìm thấy nông dân với username "${username}"`,
         HttpStatus.NOT_FOUND,
       );
     }

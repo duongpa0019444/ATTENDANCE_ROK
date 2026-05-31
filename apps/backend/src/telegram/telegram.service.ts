@@ -57,7 +57,7 @@ export class TelegramService implements OnModuleInit {
           // Normal /start without payload
           await ctx.reply(
             `👋 Chào mừng đến với Attendance Bot!\n\n` +
-            `Để liên kết tài khoản, vui lòng sử dụng nút "Liên kết Telegram" trên trang quản lý nhân sự.`,
+            `Để liên kết tài khoản, vui lòng sử dụng nút "Liên kết Telegram" trên trang quản lý nông dân.`,
           );
         }
       });
@@ -84,8 +84,8 @@ export class TelegramService implements OnModuleInit {
 
         if (!user) {
           await ctx.reply(
-            `❌ Không tìm thấy nhân sự nào có Username là "${text}".\n\n` +
-            `Để liên kết tài khoản, vui lòng sử dụng nút "Liên kết Telegram" trên trang quản lý nhân sự.`,
+            `❌ Không tìm thấy nông dân nào có Username là "${text}".\n\n` +
+            `Để liên kết tài khoản, vui lòng sử dụng nút "Liên kết Telegram" trên trang quản lý nông dân.`,
           );
           return;
         }
