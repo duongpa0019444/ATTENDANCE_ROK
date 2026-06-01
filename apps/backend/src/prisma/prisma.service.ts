@@ -50,19 +50,57 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     });
   }
 
-  async isDateLocked(date: Date | string | null | undefined): Promise<boolean> {
+  formatDateOnly(date: Date) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+    return `${year}-${month}-${day}`;
+  }
+
+  async isDateLocked(date: Date | string | null | undefined, shiftIdOrStartTime?: string): Promise<boolean> {
     if (!date) return false;
     try {
       const targetDate = new Date(date);
-      targetDate.setHours(0, 0, 0, 0);
+      const targetDateStr = this.formatDateOnly(targetDate);
 
-      const locked = await this.lockedPeriod.findFirst({
-        where: {
-          start_date: { lte: targetDate },
-          end_date: { gte: targetDate },
-        },
-      });
-      return !!locked;
+      let startTime = '00:00';
+      if (shiftIdOrStartTime) {
+        if (shiftIdOrStartTime.includes(':')) {
+          startTime = shiftIdOrStartTime;
+        } else {
+          const shift = await this.shift.findUnique({
+            where: { id: shiftIdOrStartTime },
+            select: { start_time: true },
+          });
+          if (shift) {
+            startTime = shift.start_time;
+          }
+        }
+      }
+
+      const targetDateTimeStr = `${targetDateStr}T${startTime}:00`;
+
+      const lockedPeriods = await this.lockedPeriod.findMany();
+
+      for (const locked of lockedPeriods) {
+        const startStr = this.formatDateOnly(locked.start_date);
+        const endStr = this.formatDateOnly(locked.end_date);
+
+        const startBoundary = `${startStr}T07:00:00`;
+        const endBoundary = `${endStr}T06:59:59`;
+
+        if (targetDateTimeStr >= startBoundary && targetDateTimeStr <= endBoundary) {
+          return true;
+        }
+      }
+
+      return false;
     } catch {
       return false;
     }

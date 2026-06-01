@@ -6,7 +6,7 @@ export class PayrollService {
   constructor(private readonly prisma: PrismaService) { }
 
 
-  private formatDateOnly(date: Date) {
+  formatDateOnly(date: Date) {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Ho_Chi_Minh',
       year: 'numeric',

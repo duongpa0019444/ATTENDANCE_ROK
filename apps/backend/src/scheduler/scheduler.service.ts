@@ -220,11 +220,8 @@ export class SchedulerService {
     thisMonday.setDate(thisMonday.getDate() + 7);
     thisMonday.setHours(7, 0, 0, 0);
 
-    const startDateStr = prevMonday.toISOString().split('T')[0];
-    // End date is this Monday 6:59 AM -> use thisMonday's date minus 1 minute for end param
-    const endDateObj = new Date(thisMonday);
-    endDateObj.setMinutes(endDateObj.getMinutes() - 1);
-    const endDateStr = endDateObj.toISOString().split('T')[0];
+    const startDateStr = this.payrollService.formatDateOnly(prevMonday);
+    const endDateStr = this.payrollService.formatDateOnly(thisMonday);
 
     this.logger.log(`📅 Auto-lock period: ${startDateStr} to ${endDateStr}`);
 

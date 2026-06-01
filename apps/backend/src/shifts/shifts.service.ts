@@ -72,7 +72,7 @@ export class ShiftsService {
 
     for (const dateStr of dates) {
       const workDate = new Date(dateStr);
-      if (await this.prisma.isDateLocked(workDate)) {
+      if (await this.prisma.isDateLocked(workDate, data.shift_id)) {
         throw new BadRequestException('Ngày phân ca này đã nằm trong giai đoạn chốt bảng lương. Không thể phân ca.');
       }
 
@@ -200,11 +200,11 @@ export class ShiftsService {
       // 1. Find all assignments for this shift
       const assignments = await tx.shiftAssignment.findMany({
         where: { shift_id: id },
-        select: { id: true, work_date: true },
+        select: { id: true, work_date: true, shift_id: true },
       });
 
       for (const a of assignments) {
-        if (await this.prisma.isDateLocked(a.work_date)) {
+        if (await this.prisma.isDateLocked(a.work_date, a.shift_id)) {
           throw new BadRequestException('Ca làm này có phân công thuộc ngày đã chốt bảng lương. Không thể xóa.');
         }
       }
@@ -247,12 +247,12 @@ export class ShiftsService {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.shiftAssignment.findUnique({
         where: { id },
-        select: { work_date: true },
+        select: { work_date: true, shift_id: true },
       });
-      if (existing && (await this.prisma.isDateLocked(existing.work_date))) {
+      if (existing && (await this.prisma.isDateLocked(existing.work_date, existing.shift_id))) {
         throw new BadRequestException('Bản phân công này thuộc ngày đã chốt bảng lương. Không thể chỉnh sửa.');
       }
-      if (data.work_date && (await this.prisma.isDateLocked(new Date(data.work_date)))) {
+      if (data.work_date && (await this.prisma.isDateLocked(new Date(data.work_date), data.shift_id || existing.shift_id))) {
         throw new BadRequestException('Ngày phân công mới đã bị chốt bảng lương. Không thể chuyển sang.');
       }
 
@@ -284,9 +284,9 @@ export class ShiftsService {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.shiftAssignment.findUnique({
         where: { id },
-        select: { work_date: true },
+        select: { work_date: true, shift_id: true },
       });
-      if (existing && (await this.prisma.isDateLocked(existing.work_date))) {
+      if (existing && (await this.prisma.isDateLocked(existing.work_date, existing.shift_id))) {
         throw new BadRequestException('Bản phân công này thuộc ngày đã chốt bảng lương. Không thể xóa.');
       }
       // 1. Delete associated EscalationLogs if any exist (via AttendanceLog)
@@ -315,7 +315,7 @@ export class ShiftsService {
 
   async syncAssignments(data: { shift_id: string; work_date: string; user_ids: string[] }) {
     const workDate = new Date(data.work_date);
-    if (await this.prisma.isDateLocked(workDate)) {
+    if (await this.prisma.isDateLocked(workDate, data.shift_id)) {
       throw new BadRequestException('Ngày phân ca này đã được chốt bảng lương. Không thể phân công nông dân.');
     }
     const today = new Date();
