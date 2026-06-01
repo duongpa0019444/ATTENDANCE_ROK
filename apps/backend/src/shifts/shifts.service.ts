@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ImportExcelDto } from './import-excel.dto';
 
 @Injectable()
 export class ShiftsService {
@@ -446,5 +447,160 @@ export class ShiftsService {
     }
 
     return { success: true, count: clonedShifts.length };
+  }
+
+  async importExcel(dto: ImportExcelDto) {
+    const { week_start_date, assignments } = dto;
+    const weekStartDate = new Date(week_start_date);
+
+    for (const a of assignments) {
+      const workDate = new Date(a.work_date);
+      if (await this.prisma.isDateLocked(workDate, a.start_time)) {
+        throw new BadRequestException(`Ngày hoặc ca làm ${a.work_date} lúc ${a.start_time} đã bị chốt bảng lương. Không thể nhập.`);
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // ===== STEP 1: Delete ALL existing assignments for the entire week =====
+      // This ensures manually-created shifts not present in Excel are also removed.
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekEndDate.getDate() + 7);
+
+      // Find all shifts for this week
+      const weekShifts = await tx.shift.findMany({
+        where: { week_start_date: weekStartDate },
+        select: { id: true },
+      });
+      const weekShiftIds = weekShifts.map(s => s.id);
+
+      if (weekShiftIds.length > 0) {
+        // Find all assignments for these shifts within the week date range
+        const allWeekAssignments = await tx.shiftAssignment.findMany({
+          where: {
+            shift_id: { in: weekShiftIds },
+            work_date: {
+              gte: weekStartDate,
+              lt: weekEndDate,
+            },
+          },
+          select: { id: true },
+        });
+        const allAssignmentIds = allWeekAssignments.map(a => a.id);
+
+        if (allAssignmentIds.length > 0) {
+          // Delete escalation logs
+          const allLogs = await tx.attendanceLog.findMany({
+            where: { shift_assignment_id: { in: allAssignmentIds } },
+            select: { id: true },
+          });
+          const allLogIds = allLogs.map(l => l.id);
+          if (allLogIds.length > 0) {
+            await tx.escalationLog.deleteMany({
+              where: { attendance_id: { in: allLogIds } },
+            });
+          }
+          // Delete attendance logs
+          await tx.attendanceLog.deleteMany({
+            where: { shift_assignment_id: { in: allAssignmentIds } },
+          });
+          // Delete all assignments
+          await tx.shiftAssignment.deleteMany({
+            where: { id: { in: allAssignmentIds } },
+          });
+        }
+
+        // Delete shifts that are now orphaned (no assignments left and not referenced in Excel)
+        // We'll delete all old shifts for the week; new ones will be created from Excel below
+        for (const shiftId of weekShiftIds) {
+          const remainingAssignments = await tx.shiftAssignment.count({
+            where: { shift_id: shiftId },
+          });
+          if (remainingAssignments === 0) {
+            await tx.shift.delete({ where: { id: shiftId } });
+          }
+        }
+      }
+
+      // ===== STEP 2: Create new shifts and assignments from Excel =====
+      const results = [];
+
+      for (const item of assignments) {
+        let server = await tx.server.findUnique({
+          where: { name: item.server_name },
+        });
+        if (!server) {
+          server = await tx.server.create({
+            data: { name: item.server_name },
+          });
+        }
+
+        let shift = await tx.shift.findFirst({
+          where: {
+            server_id: server.id,
+            start_time: item.start_time,
+            week_start_date: weekStartDate,
+          },
+        });
+        if (!shift) {
+          shift = await tx.shift.create({
+            data: {
+              server_id: server.id,
+              name: item.shift_name || null,
+              start_time: item.start_time,
+              end_time: '',
+              grace_minutes: 5,
+              base_salary: null,
+              bonus_salary: 0,
+              week_start_date: weekStartDate,
+            },
+          });
+        }
+
+        const workDate = new Date(item.work_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const isPastDate = workDate < today;
+
+        // Deduplicate user_ids to avoid unique constraint violation
+        const uniqueUserIds = [...new Set(item.user_ids)];
+
+        for (const userId of uniqueUserIds) {
+          // Check if assignment already exists (could happen if Excel has duplicate rows for same shift)
+          const existing = await tx.shiftAssignment.findFirst({
+            where: {
+              shift_id: shift.id,
+              work_date: workDate,
+              user_id: userId,
+            },
+          });
+          if (existing) {
+            results.push(existing);
+            continue;
+          }
+
+          const assignment = await tx.shiftAssignment.create({
+            data: {
+              user_id: userId,
+              shift_id: shift.id,
+              work_date: workDate,
+              status: 'SCHEDULED',
+            },
+          });
+
+          await tx.attendanceLog.create({
+            data: {
+              user_id: userId,
+              shift_assignment_id: assignment.id,
+              status: isPastDate ? 'READY' : 'PENDING',
+              confirm_at: isPastDate ? new Date() : null,
+            },
+          });
+
+          results.push(assignment);
+        }
+      }
+
+      return { success: true, count: results.length };
+    });
   }
 }

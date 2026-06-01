@@ -165,6 +165,325 @@ export default function ShiftsPage() {
   const [menuPortalTarget, setMenuPortalTarget] = useState<HTMLElement | null>(null);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
+  // Excel Import States
+  const [isImporting, setIsImporting] = useState(false);
+  const [excelUnmappedNames, setExcelUnmappedNames] = useState<string[]>([]);
+  const [excelUserMap, setExcelUserMap] = useState<Record<string, string>>({});
+  const [excelParsedData, setExcelParsedData] = useState<{
+    week_start_date: string;
+    rawAssignments: Array<{
+      serverName: string;
+      shiftName: string;
+      startTime: string;
+      workDateStr: string;
+      excelNames: string[];
+    }>;
+  } | null>(null);
+  const [isMappingDialogOpen, setIsMappingDialogOpen] = useState(false);
+
+  const cleanString = (str: string) => {
+    return str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+  };
+
+  const findBestUserMatch = (excelName: string, dbUsers: any[]) => {
+    const cleanedExcel = cleanString(excelName);
+    if (!cleanedExcel) return null;
+
+    // 1. Exact match by username or full name after cleaning
+    for (const u of dbUsers) {
+      if (cleanString(u.username) === cleanedExcel || cleanString(u.full_name) === cleanedExcel) {
+        return u.id;
+      }
+    }
+
+    // 2. Strict initial matching for dot-based names (e.g. M.Dương matches Mạnh Dương, not Tùng Dương)
+    if (excelName.includes('.')) {
+      const parts = excelName.split('.');
+      const initial = cleanString(parts[0] || '').charAt(0);
+      const mainPart = cleanString(parts[1] || '');
+
+      if (mainPart && initial) {
+        for (const u of dbUsers) {
+          const rawWords = u.full_name.trim().split(/\s+/).filter(Boolean);
+          if (rawWords.length < 2) continue;
+
+          const lastName = cleanString(rawWords[rawWords.length - 1]);
+          if (lastName === mainPart) {
+            const otherWords = rawWords.slice(0, -1);
+            const matchesInitial = otherWords.some((w: string) => cleanString(w).startsWith(initial));
+            if (matchesInitial) {
+              return u.id;
+            }
+          }
+        }
+      }
+    } else {
+      // 3. Exact matching for names without dots
+      for (const u of dbUsers) {
+        const cleanedFull = cleanString(u.full_name);
+        if (cleanedFull === cleanedExcel) {
+          return u.id;
+        }
+      }
+    }
+
+    return null;
+  };
+
+  const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const xlsxModule = await import('xlsx');
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = xlsxModule.read(bstr, { type: 'binary', cellDates: true });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rows = xlsxModule.utils.sheet_to_json<any[]>(ws, { header: 1, raw: false });
+
+        if (rows.length < 2) {
+          alert('File Excel không đúng cấu trúc (cần có ít nhất dòng ngày và 1 dòng ca).');
+          return;
+        }
+
+        const headerRow = rows[0];
+        const dateCols: Array<{ colIdx: number; dateStr: string }> = [];
+        headerRow.forEach((cell: any, idx: number) => {
+          if (idx >= 2 && cell) {
+            try {
+              let parsedDate: Date;
+              if (typeof cell === 'string' && cell.includes('/')) {
+                const parts = cell.split('/');
+                if (parts.length === 3) {
+                  const d = parseInt(parts[0], 10);
+                  const m = parseInt(parts[1], 10);
+                  const y = parseInt(parts[2], 10);
+                  parsedDate = new Date(y, m - 1, d);
+                } else {
+                  parsedDate = new Date(cell);
+                }
+              } else {
+                parsedDate = new Date(cell);
+              }
+
+              if (!isNaN(parsedDate.getTime())) {
+                dateCols.push({
+                  colIdx: idx,
+                  dateStr: format(parsedDate, 'yyyy-MM-dd')
+                });
+              }
+            } catch (err) {
+              console.error('Failed to parse date cell:', cell, err);
+            }
+          }
+        });
+
+        if (dateCols.length === 0) {
+          alert('Không tìm thấy cột ngày hợp lệ ở dòng đầu tiên của Excel.');
+          return;
+        }
+
+        const weekStartDateStr = dateCols[0].dateStr;
+        const parsedAssignments: Array<{
+          serverName: string;
+          shiftName: string;
+          startTime: string;
+          workDateStr: string;
+          excelNames: string[];
+        }> = [];
+        const uniqueNamesInExcel = new Set<string>();
+
+        for (let r = 1; r < rows.length; r++) {
+          const row = rows[r];
+          if (!row || row.length < 2) continue;
+
+          const serverCell = String(row[0] || '').trim();
+          let timeCell = String(row[1] || '').trim();
+
+          if (!serverCell) continue;
+
+          const serverName = serverCell.replace(/^sv\s+/i, '').replace(/\s+/g, '');
+          const shiftName = serverCell;
+
+          if (timeCell.includes(':')) {
+            const parts = timeCell.split(':');
+            timeCell = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+          } else {
+            timeCell = '00:00';
+          }
+
+          dateCols.forEach(({ colIdx, dateStr }) => {
+            const cellValue = String(row[colIdx] || '').trim();
+            if (cellValue && cellValue.toLowerCase() !== 'x') {
+              const nameList = cellValue.split(/[,/+\n]/).map(n => n.trim()).filter(Boolean);
+              nameList.forEach(n => uniqueNamesInExcel.add(n));
+
+              parsedAssignments.push({
+                serverName,
+                shiftName,
+                startTime: timeCell,
+                workDateStr: dateStr,
+                excelNames: nameList,
+              });
+            }
+          });
+        }
+
+        const initialMap: Record<string, string> = {};
+        const unmapped: string[] = [];
+
+        Array.from(uniqueNamesInExcel).forEach(name => {
+          const matchedUserId = findBestUserMatch(name, users);
+          if (matchedUserId) {
+            initialMap[name] = matchedUserId;
+          } else {
+            unmapped.push(name);
+          }
+        });
+
+        setExcelParsedData({
+          week_start_date: weekStartDateStr,
+          rawAssignments: parsedAssignments,
+        });
+        setExcelUserMap(initialMap);
+
+        if (unmapped.length > 0) {
+          setExcelUnmappedNames(unmapped);
+          setIsMappingDialogOpen(true);
+        } else {
+          submitExcelImport(weekStartDateStr, parsedAssignments, initialMap);
+        }
+      } catch (err) {
+        console.error('Failed to parse Excel file:', err);
+        alert('Lỗi đọc file Excel. Vui lòng kiểm tra định dạng.');
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const submitExcelImport = async (
+    weekStartDate: string,
+    rawAssignments: Array<{
+      serverName: string;
+      shiftName: string;
+      startTime: string;
+      workDateStr: string;
+      excelNames: string[];
+    }>,
+    userMap: Record<string, string>
+  ) => {
+    setIsImporting(true);
+    try {
+      const assignmentsPayload = [];
+      for (const item of rawAssignments) {
+        const userIds = item.excelNames
+          .map(name => userMap[name])
+          .filter(Boolean);
+
+        if (userIds.length > 0) {
+          assignmentsPayload.push({
+            server_name: item.serverName,
+            shift_name: item.shiftName,
+            start_time: item.startTime,
+            work_date: item.workDateStr,
+            user_ids: userIds,
+          });
+        }
+      }
+
+      const res = await apiFetch(`${API_URL}/shifts/import-excel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          week_start_date: weekStartDate,
+          assignments: assignmentsPayload,
+        }),
+      });
+
+      if (res.ok) {
+        setIsMappingDialogOpen(false);
+        setExcelParsedData(null);
+        setExcelUserMap({});
+        setExcelUnmappedNames([]);
+        alert('Nhập lịch phân ca từ Excel thành công!');
+        fetchData();
+      } else {
+        const errData = await res.json();
+        alert(`Nhập lịch thất bại: ${errData.message || 'Lỗi server'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Lỗi kết nối khi nhập Excel.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const [isCreatingUsers, setIsCreatingUsers] = useState(false);
+
+  const handleAutoCreateUsers = async () => {
+    setIsCreatingUsers(true);
+    try {
+      const createdMap = { ...excelUserMap };
+      const newUsersList = [...users];
+
+      for (const name of excelUnmappedNames) {
+        if (createdMap[name]) continue;
+
+        let baseUsername = cleanString(name);
+        if (!baseUsername) baseUsername = 'user';
+
+        let finalUsername = baseUsername;
+        let count = 1;
+        while (newUsersList.some(u => u.username === finalUsername)) {
+          finalUsername = `${baseUsername}${count}`;
+          count++;
+        }
+
+        const res = await apiFetch(`${API_URL}/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: finalUsername,
+            full_name: name,
+            role: 'STAFF',
+            password: '123456789',
+          })
+        });
+
+        if (res.ok) {
+          const createdUser = await res.json();
+          createdMap[name] = createdUser.id;
+          newUsersList.push({
+            id: createdUser.id,
+            username: createdUser.username,
+            full_name: createdUser.full_name,
+            role: 'STAFF',
+          });
+        }
+      }
+
+      setUsers(newUsersList);
+      setExcelUserMap(createdMap);
+      setExcelUnmappedNames([]);
+      alert('Đã tự động tạo các nhân sự mới thành công! Tiếp tục bấm "Xác nhận & Nhập lịch" để chốt phân lịch.');
+    } catch (err) {
+      console.error(err);
+      alert('Gặp lỗi khi tự động tạo tài khoản nhân sự.');
+    } finally {
+      setIsCreatingUsers(false);
+    }
+  };
+
   useEffect(() => {
     setMenuPortalTarget(document.body);
   }, []);
@@ -288,8 +607,38 @@ export default function ShiftsPage() {
         setSystemSettings(settData);
       }
 
+      // Sort shifts:
+      // 1. By start_time (ascending)
+      // 2. By server name (extracted first/smallest number) (ascending)
+      // 3. By server name alphabetically
+      const sortedShifts = [...shData].sort((a: any, b: any) => {
+        const timeA = a.start_time || '00:00';
+        const timeB = b.start_time || '00:00';
+        if (timeA !== timeB) {
+          return timeA.localeCompare(timeB);
+        }
+        
+        const nameA = a.server?.name || '';
+        const nameB = b.server?.name || '';
+        
+        const getMinNum = (name: string) => {
+          const matches = name.match(/\d+/g);
+          if (!matches || matches.length === 0) return Infinity;
+          return Math.min(...matches.map(Number));
+        };
+        
+        const valA = getMinNum(nameA);
+        const valB = getMinNum(nameB);
+        
+        if (valA !== valB) {
+          return valA - valB;
+        }
+        
+        return nameA.localeCompare(nameB);
+      });
+
       setServers(sData);
-      setShifts(shData);
+      setShifts(sortedShifts);
       setUsers(uData);
       setAssignments(aData);
 
@@ -553,6 +902,7 @@ export default function ShiftsPage() {
   // Weekly shifts summary per user
   const getWeeklySummary = () => {
     const summary: Record<string, { name: string; shiftCount: number }> = {};
+    const visibleShiftIds = new Set(filteredShifts.map((s: any) => s.id));
 
     // Initialize summary with all STAFF role users
     users
@@ -561,10 +911,24 @@ export default function ShiftsPage() {
         summary[u.id] = { name: u.full_name, shiftCount: 0 };
       });
 
-    // Populate summary with assignments
+    // Populate summary with assignments within the active week scope and filters
     assignments.forEach((a: any) => {
       if (summary[a.user_id] && a.shift) {
-        summary[a.user_id].shiftCount += 1;
+        // Only count assignments for shifts that are currently visible/filtered
+        if (!visibleShiftIds.has(a.shift_id)) {
+          return;
+        }
+
+        // Filter by week days scope (isShiftInCurrentWeek logic)
+        const workDate = new Date(a.work_date);
+        const dateStr = format(workDate, 'yyyy-MM-dd');
+        const isInCurrentWeek = weekDays.some(day => {
+          return format(day, 'yyyy-MM-dd') === dateStr && isShiftInCurrentWeek(a.shift, day);
+        });
+
+        if (isInCurrentWeek) {
+          summary[a.user_id].shiftCount += 1;
+        }
       }
     });
 
@@ -771,6 +1135,25 @@ export default function ShiftsPage() {
                         Xóa lọc
                       </Button>
                     )}
+
+                    {/* Import Excel Button */}
+                    <Button
+                      disabled={isWeekLocked}
+                      onClick={() => {
+                        document.getElementById('excel-import-input')?.click();
+                      }}
+                      className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold h-10 px-3.5 rounded-lg flex items-center gap-1.5 transition-all text-xs active:scale-[0.98] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Nhập Excel
+                    </Button>
+                    <input
+                      id="excel-import-input"
+                      type="file"
+                      accept=".xlsx, .xls"
+                      className="hidden"
+                      onChange={handleExcelImport}
+                    />
 
                     {/* Fullscreen Toggle Button */}
                     <Button
@@ -1499,6 +1882,107 @@ export default function ShiftsPage() {
                 className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98]"
               >
                 Lưu thay đổi
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* DIALOG: EXCEL USER MAPPING MODAL */}
+        <Dialog open={isMappingDialogOpen} onOpenChange={setIsMappingDialogOpen}>
+          <DialogContent className="bg-slate-900 text-white border-slate-800 rounded-xl sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <Users className="w-5.5 h-5.5 text-cyan-400" /> Khớp Tên Nhân Viên Excel
+              </DialogTitle>
+              <DialogDescription className="text-slate-400 text-xs mt-1">
+                Phát hiện nhân sự trong file Excel chưa khớp với cơ sở dữ liệu. Vui lòng thiết lập liên kết dưới đây:
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="max-h-[350px] overflow-y-auto space-y-4 py-4 pr-1 text-sm">
+              {excelUnmappedNames.length === 0 ? (
+                <div className="text-center py-8 text-emerald-450 bg-slate-950/40 border border-emerald-500/20 rounded-xl space-y-2">
+                  <p className="text-emerald-400 font-bold text-base">🎉 Hoàn tất đối khớp nhân sự!</p>
+                  <p className="text-xs text-slate-400">Tất cả nhân sự trong file Excel đã được liên kết hoặc tự động tạo tài khoản.</p>
+                </div>
+              ) : (
+                excelUnmappedNames.map((excelName) => (
+                  <div key={excelName} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/40 p-3 rounded-lg border border-slate-800/80">
+                    <span className="font-mono text-cyan-400 font-bold shrink-0">{excelName}</span>
+                    
+                    <div className="w-full sm:w-64 text-slate-900">
+                      <Select
+                        instanceId={`map-select-${excelName}`}
+                        placeholder="-- Chọn nông dân hoặc Bỏ qua --"
+                        options={[
+                          { value: 'skip', label: '🚫 Bỏ qua (Không phân công)' },
+                          ...users
+                            .filter((u: any) => u.role !== 'ADMIN')
+                            .map((u: any) => ({ value: u.id, label: u.full_name }))
+                        ]}
+                        styles={selectStyles}
+                        value={
+                          excelUserMap[excelName]
+                            ? { 
+                                value: excelUserMap[excelName], 
+                                label: users.find(u => u.id === excelUserMap[excelName])?.full_name || 'Đã liên kết' 
+                              }
+                            : { value: 'skip', label: '🚫 Bỏ qua (Không phân công)' }
+                        }
+                        onChange={(opt: any) => {
+                          const val = opt ? opt.value : 'skip';
+                          setExcelUserMap(prev => {
+                            const updated = { ...prev };
+                            if (val === 'skip') {
+                              delete updated[excelName];
+                            } else {
+                              updated[excelName] = val;
+                            }
+                            return updated;
+                          });
+                        }}
+                        menuPortalTarget={menuPortalTarget}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <DialogFooter className="gap-2 flex-col sm:flex-row sm:justify-between items-stretch sm:items-center">
+              <div className="flex gap-2 flex-col sm:flex-row">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsMappingDialogOpen(false);
+                    setExcelParsedData(null);
+                    setExcelUserMap({});
+                    setExcelUnmappedNames([]);
+                  }}
+                  className="border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg h-10 px-4"
+                >
+                  Hủy bỏ
+                </Button>
+                {excelUnmappedNames.length > 0 && (
+                  <Button
+                    disabled={isCreatingUsers}
+                    onClick={handleAutoCreateUsers}
+                    className="bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/35 text-emerald-400 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98]"
+                  >
+                    {isCreatingUsers ? 'Đang tạo...' : 'Tự động tạo nhân sự'}
+                  </Button>
+                )}
+              </div>
+              <Button
+                disabled={isImporting || isCreatingUsers}
+                onClick={() => {
+                  if (excelParsedData) {
+                    submitExcelImport(excelParsedData.week_start_date, excelParsedData.rawAssignments, excelUserMap);
+                  }
+                }}
+                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98] flex items-center gap-1.5 self-end sm:self-auto"
+              >
+                {isImporting ? 'Đang xử lý...' : 'Xác nhận & Nhập lịch'}
               </Button>
             </DialogFooter>
           </DialogContent>

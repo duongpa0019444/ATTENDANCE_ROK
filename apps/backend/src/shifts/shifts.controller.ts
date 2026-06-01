@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Put, Delete, Param, UseGuards, Query, Request } from '@nestjs/common';
 import { ShiftsService } from './shifts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ImportExcelDto } from './import-excel.dto';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '@prisma/client';
@@ -20,6 +21,11 @@ export class ShiftsController {
   @Post('clone-week')
   cloneWeek(@Body() body: { from_week: string; to_week: string }) {
     return this.shiftsService.cloneWeek(body.from_week, body.to_week);
+  }
+
+  @Post('import-excel')
+  importExcel(@Body() dto: ImportExcelDto) {
+    return this.shiftsService.importExcel(dto);
   }
 
   @Post()
