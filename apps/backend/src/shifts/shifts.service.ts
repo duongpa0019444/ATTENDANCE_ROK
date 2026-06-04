@@ -525,12 +525,38 @@ export class ShiftsService {
       const results = [];
 
       for (const item of assignments) {
+        // Tách các server nếu có dấu cộng (ví dụ "2914+2658" thành ["2914", "2658"])
+        const individualNames = item.server_name
+          .split('+')
+          .map(name => name.trim())
+          .filter(Boolean);
+
+        // Đảm bảo tất cả các server riêng lẻ đều tồn tại trong database
+        const dbServers = [];
+        for (const name of individualNames) {
+          let indServer = await tx.server.findUnique({
+            where: { name },
+          });
+          if (!indServer) {
+            indServer = await tx.server.create({
+              data: { name },
+            });
+          }
+          dbServers.push(indServer);
+        }
+
+        // Tạo/Tìm server gộp (composite server) theo chuẩn sắp xếp số hiệu để gán ca làm
+        const combinedName = dbServers
+          .map(s => s.name)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+          .join('+');
+
         let server = await tx.server.findUnique({
-          where: { name: item.server_name },
+          where: { name: combinedName },
         });
         if (!server) {
           server = await tx.server.create({
-            data: { name: item.server_name },
+            data: { name: combinedName },
           });
         }
 
@@ -608,6 +634,8 @@ export class ShiftsService {
       }
 
       return { success: true, count: results.length };
+    }, {
+      timeout: 50000
     });
   }
 }

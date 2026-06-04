@@ -238,6 +238,16 @@ export default function ShiftsPage() {
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // 1. Kiểm tra định dạng đuôi file
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    if (fileExt !== 'xlsx' && fileExt !== 'xls') {
+      alert('Vui lòng chọn file Excel đúng định dạng (.xlsx hoặc .xls)');
+      e.target.value = '';
+      return;
+    }
+
+    setIsImporting(true); // Hiển thị preloader
     e.target.value = '';
 
     const xlsxModule = await import('xlsx');
@@ -252,6 +262,7 @@ export default function ShiftsPage() {
 
         if (rows.length < 2) {
           alert('File Excel không đúng cấu trúc (cần có ít nhất dòng ngày và 1 dòng ca).');
+          setIsImporting(false);
           return;
         }
 
@@ -288,11 +299,24 @@ export default function ShiftsPage() {
         });
 
         if (dateCols.length === 0) {
-          alert('Không tìm thấy cột ngày hợp lệ ở dòng đầu tiên của Excel.');
+          alert('Không tìm thấy cột ngày hợp lệ ở dòng đầu tiên của Excel. Vui lòng kiểm tra lại cấu trúc file.');
+          setIsImporting(false);
           return;
         }
 
         const weekStartDateStr = dateCols[0].dateStr;
+        
+        // 2. Kiểm tra lệch tuần giữa Excel và tuần đang chọn trên hệ thống
+        const currentSelectedStartStr = format(selectedDate, 'yyyy-MM-dd');
+        if (weekStartDateStr !== currentSelectedStartStr) {
+          const parsedExcelStart = parseISO(weekStartDateStr);
+          const confirmMsg = `Cảnh báo:\nTuần bắt đầu trong file Excel (${format(parsedExcelStart, 'dd/MM/yyyy')}) không trùng khớp với Tuần đang chọn trên hệ thống (${format(selectedDate, 'dd/MM/yyyy')}).\n\nBạn có chắc chắn muốn tiếp tục nhập lịch cho tuần ngày ${format(parsedExcelStart, 'dd/MM/yyyy')} không?`;
+          if (!window.confirm(confirmMsg)) {
+            setIsImporting(false);
+            return;
+          }
+        }
+
         const parsedAssignments: Array<{
           serverName: string;
           shiftName: string;
@@ -364,6 +388,7 @@ export default function ShiftsPage() {
 
         if (unmapped.length > 0) {
           setExcelUnmappedNames(unmapped);
+          setIsImporting(false); // Tắt preloader để người dùng tương tác chọn map nhân viên
           setIsMappingDialogOpen(true);
         } else {
           submitExcelImport(weekStartDateStr, parsedAssignments, initialMap);
@@ -371,6 +396,7 @@ export default function ShiftsPage() {
       } catch (err) {
         console.error('Failed to parse Excel file:', err);
         alert('Lỗi đọc file Excel. Vui lòng kiểm tra định dạng.');
+        setIsImporting(false);
       }
     };
     reader.readAsBinaryString(file);
@@ -2018,6 +2044,19 @@ export default function ShiftsPage() {
             >
               <Trash2 className="w-3.5 h-3.5" /> Xóa ca làm
             </button>
+          </div>
+        )}
+
+        {/* Fullscreen Preloader / Loading Overlay */}
+        {isImporting && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center z-[99999] transition-all">
+            <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl flex flex-col items-center gap-4 shadow-2xl max-w-sm text-center">
+              <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              <div className="space-y-1">
+                <p className="text-lg font-bold text-slate-100">Đang nhập dữ liệu...</p>
+                <p className="text-sm text-slate-400">Hệ thống đang kiểm tra cấu trúc file và xử lý phân ca. Vui lòng không tắt hoặc thao tác trên màn hình.</p>
+              </div>
+            </div>
           </div>
         )}
 
