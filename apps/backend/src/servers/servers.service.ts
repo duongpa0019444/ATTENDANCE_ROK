@@ -32,8 +32,58 @@ export class ServersService {
   }
 
   async remove(id: string) {
-    return this.prisma.server.delete({
-      where: { id },
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Lấy danh sách ID các Ca làm (Shift) của Server này
+      const shifts = await tx.shift.findMany({
+        where: { server_id: id },
+        select: { id: true }
+      });
+      const shiftIds = shifts.map(s => s.id);
+
+      if (shiftIds.length > 0) {
+        // 2. Lấy danh sách ID phân công ca làm (ShiftAssignment) liên quan
+        const assignments = await tx.shiftAssignment.findMany({
+          where: { shift_id: { in: shiftIds } },
+          select: { id: true }
+        });
+        const assignmentIds = assignments.map(a => a.id);
+
+        if (assignmentIds.length > 0) {
+          // 3. Lấy danh sách ID lịch sử điểm danh (AttendanceLog) liên quan
+          const attendanceLogs = await tx.attendanceLog.findMany({
+            where: { shift_assignment_id: { in: assignmentIds } },
+            select: { id: true }
+          });
+          const attendanceLogIds = attendanceLogs.map(log => log.id);
+
+          if (attendanceLogIds.length > 0) {
+            // 4. Xóa EscalationLog của các lịch sử điểm danh này
+            await tx.escalationLog.deleteMany({
+              where: { attendance_id: { in: attendanceLogIds } }
+            });
+
+            // 5. Xóa các AttendanceLog liên quan
+            await tx.attendanceLog.deleteMany({
+              where: { id: { in: attendanceLogIds } }
+            });
+          }
+
+          // 6. Xóa các phân công ca làm (ShiftAssignment)
+          await tx.shiftAssignment.deleteMany({
+            where: { id: { in: assignmentIds } }
+          });
+        }
+
+        // 7. Xóa các Ca làm (Shift) của Server
+        await tx.shift.deleteMany({
+          where: { id: { in: shiftIds } }
+        });
+      }
+
+      // 8. Cuối cùng, xóa Server
+      return tx.server.delete({
+        where: { id },
+      });
     });
   }
 }
