@@ -464,7 +464,7 @@ export class ShiftsService {
       // ===== STEP 1: Delete ALL existing assignments for the entire week =====
       // This ensures manually-created shifts not present in Excel are also removed.
       const weekEndDate = new Date(weekStartDate);
-      weekEndDate.setDate(weekEndDate.getDate() + 7);
+      weekEndDate.setDate(weekEndDate.getDate() + 8);
 
       // Find all shifts for this week
       const weekShifts = await tx.shift.findMany({
@@ -552,6 +552,13 @@ export class ShiftsService {
               base_salary: null,
               bonus_salary: 0,
               week_start_date: weekStartDate,
+            },
+          });
+        } else {
+          shift = await tx.shift.update({
+            where: { id: shift.id },
+            data: {
+              name: item.shift_name || null,
             },
           });
         }

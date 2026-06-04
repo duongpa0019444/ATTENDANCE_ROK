@@ -311,8 +311,14 @@ export default function ShiftsPage() {
 
           if (!serverCell) continue;
 
-          const serverName = serverCell.replace(/^sv\s+/i, '').replace(/\s+/g, '');
-          const shiftName = serverCell;
+          const cleanCell = serverCell.replace(/^sv\s*/i, '').trim();
+          const serverMatch = cleanCell.match(/^([0-9+\s]+)(.*)$/);
+          let serverName = cleanCell;
+          let shiftName = '';
+          if (serverMatch) {
+            serverName = serverMatch[1].replace(/\s+/g, '');
+            shiftName = serverMatch[2].trim();
+          }
 
           if (timeCell.includes(':')) {
             const parts = timeCell.split(':');
