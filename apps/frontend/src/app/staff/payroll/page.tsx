@@ -86,7 +86,8 @@ export default function StaffPayrollPage() {
     try {
       const res = await apiFetch(`${API_URL}/payroll/my-payroll?start_date=${startStr}&end_date=${endStr}`);
       if (res.ok) {
-        const data = await res.json();
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : null;
         setPayrollData(data);
       }
     } catch (err) {
