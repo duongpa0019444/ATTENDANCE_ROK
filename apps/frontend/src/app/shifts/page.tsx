@@ -287,6 +287,13 @@ export default function ShiftsPage() {
               }
 
               if (!isNaN(parsedDate.getTime())) {
+                let y = parsedDate.getFullYear();
+                if (y < 100) {
+                  parsedDate.setFullYear(y + 2000);
+                } else if (y >= 1900 && y < 2000) {
+                  parsedDate.setFullYear(y + 100);
+                }
+
                 dateCols.push({
                   colIdx: idx,
                   dateStr: format(parsedDate, 'yyyy-MM-dd')
