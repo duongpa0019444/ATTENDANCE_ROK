@@ -268,31 +268,77 @@ export default function ShiftsPage() {
 
         const headerRow = rows[0];
         const dateCols: Array<{ colIdx: number; dateStr: string }> = [];
+        
+        // Expected dates based on selected week
+        const expectedDates = Array.from({ length: 8 }).map((_, i) => addDays(selectedDate, i));
+
         headerRow.forEach((cell: any, idx: number) => {
           if (idx >= 2 && cell) {
+            const expectedDate = expectedDates[idx - 2];
+            if (!expectedDate) return;
+
             try {
-              let parsedDate: Date;
-              if (typeof cell === 'string' && cell.includes('/')) {
-                const parts = cell.split('/');
-                if (parts.length === 3) {
-                  const d = parseInt(parts[0], 10);
-                  const m = parseInt(parts[1], 10);
-                  const y = parseInt(parts[2], 10);
-                  parsedDate = new Date(y, m - 1, d);
+              let parsedDate: Date | null = null;
+              const cellStr = String(cell).trim();
+              console.log(`[Excel Debug] Col ${idx}: raw cell =`, cell, "type =", typeof cell, "cellStr =", cellStr);
+              
+              if (cell instanceof Date) {
+                const dateDMY = cell;
+                // Swap day and month: cell.getMonth() + 1 becomes day, cell.getDate() becomes month
+                const dateMDY = new Date(cell.getFullYear(), cell.getDate() - 1, cell.getMonth() + 1);
+                
+                if (format(dateDMY, 'yyyy-MM-dd') === format(expectedDate, 'yyyy-MM-dd')) {
+                  parsedDate = dateDMY;
+                } else if (format(dateMDY, 'yyyy-MM-dd') === format(expectedDate, 'yyyy-MM-dd')) {
+                  parsedDate = dateMDY;
                 } else {
-                  parsedDate = new Date(cell);
+                  parsedDate = dateDMY;
                 }
               } else {
-                parsedDate = new Date(cell);
+                // Match D/M/YYYY or D-M-YYYY
+                const dmyMatch = cellStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+                if (dmyMatch) {
+                  const d = parseInt(dmyMatch[1], 10);
+                  const m = parseInt(dmyMatch[2], 10);
+                  let y = parseInt(dmyMatch[3], 10);
+                  if (y < 100) y += 2000;
+                  
+                  const dateDMY = new Date(y, m - 1, d);
+                  const dateMDY = new Date(y, d - 1, m); // Swap day and month
+                  
+                  if (format(dateDMY, 'yyyy-MM-dd') === format(expectedDate, 'yyyy-MM-dd')) {
+                    parsedDate = dateDMY;
+                  } else if (format(dateMDY, 'yyyy-MM-dd') === format(expectedDate, 'yyyy-MM-dd')) {
+                    parsedDate = dateMDY;
+                  } else {
+                    parsedDate = dateDMY;
+                  }
+                } else {
+                  // Match YYYY-MM-DD
+                  const ymdMatch = cellStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+                  if (ymdMatch) {
+                    const y = parseInt(ymdMatch[1], 10);
+                    const m = parseInt(ymdMatch[2], 10);
+                    const d = parseInt(ymdMatch[3], 10);
+                    parsedDate = new Date(y, m - 1, d);
+                  } else {
+                    const tempDate = new Date(cellStr);
+                    if (!isNaN(tempDate.getTime())) {
+                      parsedDate = tempDate;
+                    }
+                  }
+                }
               }
 
-              if (!isNaN(parsedDate.getTime())) {
+              if (parsedDate && !isNaN(parsedDate.getTime())) {
                 let y = parsedDate.getFullYear();
                 if (y < 100) {
                   parsedDate.setFullYear(y + 2000);
                 } else if (y >= 1900 && y < 2000) {
                   parsedDate.setFullYear(y + 100);
                 }
+
+                console.log(`[Excel Debug] Col ${idx} Parsed Date:`, parsedDate.toISOString(), "Formatted (yyyy-MM-dd):", format(parsedDate, 'yyyy-MM-dd'));
 
                 dateCols.push({
                   colIdx: idx,
@@ -360,8 +406,11 @@ export default function ShiftsPage() {
 
           dateCols.forEach(({ colIdx, dateStr }) => {
             const cellValue = String(row[colIdx] || '').trim();
-            if (cellValue && cellValue.toLowerCase() !== 'x') {
-              const nameList = cellValue.split(/[,/+\n]/).map(n => n.trim()).filter(Boolean);
+            if (cellValue && !/^[x.\s]+$/i.test(cellValue)) {
+              const nameList = cellValue
+                .split(/[,/+\n]/)
+                .map(n => n.replace(/\([^)]*\)/g, '').trim())
+                .filter(Boolean);
               nameList.forEach(n => uniqueNamesInExcel.add(n));
 
               parsedAssignments.push({
