@@ -50,12 +50,13 @@ model TelegramLinkToken {
 }
 
 model Server {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  status      String   @default("ACTIVE")
-  base_salary Float    @default(0)
-  created_at  DateTime @default(now())
-  shifts      Shift[]
+  id            String             @id @default(uuid())
+  name          String             @unique
+  status        String             @default("ACTIVE")
+  base_salary   Float              @default(0)
+  created_at    DateTime           @default(now())
+  shifts        Shift[]
+  week_salaries ServerWeekSalary[]
 
   @@map("servers")
 }
@@ -75,6 +76,7 @@ model Shift {
   
   server          Server            @relation(fields: [server_id], references: [id], onDelete: Cascade)
   assignments     ShiftAssignment[]
+  day_bonuses     ShiftDayBonus[]
 
   @@map("shifts")
 }
@@ -196,3 +198,31 @@ model PayrollAllowance {
 
   @@map("payroll_allowances")
 }
+
+model ShiftDayBonus {
+  id         String   @id @default(uuid())
+  shift_id   String
+  work_date  DateTime @db.Date
+  amount     Float    @default(0)
+  created_at DateTime @default(now())
+
+  shift      Shift    @relation(fields: [shift_id], references: [id], onDelete: Cascade)
+
+  @@unique([shift_id, work_date])
+  @@map("shift_day_bonuses")
+}
+
+model ServerWeekSalary {
+  id          String   @id @default(uuid())
+  server_id   String
+  start_date  DateTime @db.Date
+  end_date    DateTime @db.Date
+  base_salary Float    @default(0)
+  created_at  DateTime @default(now())
+
+  server      Server   @relation(fields: [server_id], references: [id], onDelete: Cascade)
+
+  @@unique([server_id, start_date, end_date])
+  @@map("server_week_salaries")
+}
+

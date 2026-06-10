@@ -63,6 +63,20 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     return `${year}-${month}-${day}`;
   }
 
+  getWeekStartDateStr(date: Date | string): string {
+    const d = new Date(date);
+    const day = d.getDay();
+    // get Monday of the week
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d.setDate(diff));
+    return this.formatDateOnly(monday);
+  }
+
+  async getShiftDayStartTimeForDate(date: Date | string): Promise<string> {
+    const mondayStr = this.getWeekStartDateStr(date);
+    return this.getSetting(`WEEK_START_TIME_${mondayStr}`, '07:00');
+  }
+
   async isDateLocked(date: Date | string | null | undefined, shiftIdOrStartTime?: string): Promise<boolean> {
     if (!date) return false;
     try {
@@ -84,18 +98,20 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
         }
       }
 
-      const targetDateTimeStr = `${targetDateStr}T${startTime}:00`;
+      const targetDateTime = new Date(`${targetDateStr}T${startTime}:00`);
 
+      const shiftDayStartTime = await this.getShiftDayStartTimeForDate(targetDate);
       const lockedPeriods = await this.lockedPeriod.findMany();
 
       for (const locked of lockedPeriods) {
         const startStr = this.formatDateOnly(locked.start_date);
         const endStr = this.formatDateOnly(locked.end_date);
 
-        const startBoundary = `${startStr}T07:00:00`;
-        const endBoundary = `${endStr}T06:59:59`;
+        const startBoundaryDate = new Date(`${startStr}T${shiftDayStartTime}:00`);
+        const endBoundaryDate = new Date(`${endStr}T${shiftDayStartTime}:00`);
+        endBoundaryDate.setSeconds(endBoundaryDate.getSeconds() - 1);
 
-        if (targetDateTimeStr >= startBoundary && targetDateTimeStr <= endBoundary) {
+        if (targetDateTime >= startBoundaryDate && targetDateTime <= endBoundaryDate) {
           return true;
         }
       }

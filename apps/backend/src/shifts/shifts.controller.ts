@@ -78,6 +78,17 @@ export class ShiftsController {
     return this.shiftsService.updateAssignment(id, data);
   }
 
+  @Get('weekly-config')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.STAFF)
+  getWeeklyConfig(@Query('week_start_date') weekStartDate: string) {
+    return this.shiftsService.getWeeklyConfig(weekStartDate);
+  }
+
+  @Post('weekly-config')
+  saveWeeklyConfig(@Body() body: { week_start_date: string; day_start_time: string }) {
+    return this.shiftsService.saveWeeklyConfig(body.week_start_date, body.day_start_time);
+  }
+
   @Delete('assignments/:id')
   removeAssignment(@Param('id') id: string) {
     return this.shiftsService.removeAssignment(id);

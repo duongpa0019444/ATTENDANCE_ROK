@@ -130,5 +130,62 @@ export class PayrollController {
     }
     return this.payrollService.unlockPeriod(body.start_date, body.end_date);
   }
+
+  @Get('shift-bonuses')
+  async getShiftDayBonuses(
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    return this.payrollService.getShiftDayBonuses(startDate, endDate);
+  }
+
+  @Post('shift-bonuses')
+  async upsertShiftDayBonus(
+    @Body()
+    body: {
+      shift_id: string;
+      work_date: string;
+      amount: number;
+    },
+  ) {
+    return this.payrollService.upsertShiftDayBonus(body);
+  }
+
+  @Delete('shift-bonuses/:id')
+  async deleteShiftDayBonus(@Param('id') id: string) {
+    return this.payrollService.deleteShiftDayBonus(id);
+  }
+
+  @Get('server-salaries')
+  async getServerWeekSalaries(
+    @Query('start_date') startDate: string,
+    @Query('end_date') endDate: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new Error('Missing start_date or end_date');
+    }
+    return this.payrollService.getServerWeekSalaries(startDate, endDate);
+  }
+
+  @Post('server-salaries')
+  async upsertServerWeekSalary(
+    @Body()
+    body: {
+      server_id: string;
+      start_date: string;
+      end_date: string;
+      base_salary: number;
+    },
+  ) {
+    if (!body.server_id || !body.start_date || !body.end_date || body.base_salary === undefined) {
+      throw new Error('Missing required fields');
+    }
+    return this.payrollService.upsertServerWeekSalary(body);
+  }
+
+  @Delete('server-salaries/:id')
+  async deleteServerWeekSalary(@Param('id') id: string) {
+    return this.payrollService.deleteServerWeekSalary(id);
+  }
 }
 

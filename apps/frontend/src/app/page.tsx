@@ -48,6 +48,7 @@ export default function AdminDashboard() {
   const [preparationMinutes, setPreparationMinutes] = useState<number>(0);
   const [unconfirmedWarningMinutes, setUnconfirmedWarningMinutes] = useState<number>(5);
   const [checkinGraceMinutes, setCheckinGraceMinutes] = useState<number>(5);
+  const [shiftDayStartTime, setShiftDayStartTime] = useState<string>('07:00');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -69,11 +70,34 @@ export default function AdminDashboard() {
     try {
       const dateStr = format(filterDate, 'yyyy-MM-dd');
       const nextDateStr = format(addDays(filterDate, 1), 'yyyy-MM-dd');
+
+      // Determine Monday of the selected date's week
+      const getMonday = (d: Date) => {
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        return new Date(d.setDate(diff));
+      };
+      const mondayStr = format(getMonday(new Date(filterDate)), 'yyyy-MM-dd');
+
+      // Fetch weekly config
+      let currentStartTime = '07:00';
+      try {
+        const configRes = await apiFetch(`${API_URL}/shifts/weekly-config?week_start_date=${mondayStr}`);
+        if (configRes.ok) {
+          const configData = await configRes.json();
+          currentStartTime = configData.day_start_time || '07:00';
+          setShiftDayStartTime(currentStartTime);
+        }
+      } catch (err) {
+        console.error('Failed to fetch weekly config:', err);
+      }
+
       const res = await apiFetch(`${API_URL}/shifts/assignments?start_date=${dateStr}&end_date=${nextDateStr}`);
       if (!res.ok) throw new Error('Failed to fetch assignments');
       const data = await res.json();
 
-      // Filter and map assignments according to business day: 7AM selected date to 6:59AM next day
+      // Filter and map assignments according to business day
+      const boundaryHour = parseInt(currentStartTime.split(':')[0] || '7', 10);
       const mapped = data
         .filter((a: any) => {
           if (!a.shift || !a.work_date) return false;
@@ -81,10 +105,10 @@ export default function AdminDashboard() {
           const assignmentDateStr = format(parseISO(a.work_date), 'yyyy-MM-dd');
           
           if (assignmentDateStr === dateStr) {
-            return sh >= 7;
+            return sh >= boundaryHour;
           }
           if (assignmentDateStr === nextDateStr) {
-            return sh < 7;
+            return sh < boundaryHour;
           }
           return false;
         })
@@ -339,7 +363,7 @@ export default function AdminDashboard() {
                   Realtime Active Shifts
                 </CardTitle>
                 <p className="text-xs text-slate-400 mt-1">
-                  💡 Ca làm trong ngày tính từ 07h00 sáng ngày chọn đến 06h59 sáng hôm sau.
+                  💡 Ca làm trong ngày tính từ {shiftDayStartTime} sáng ngày chọn đến trước {shiftDayStartTime} sáng hôm sau.
                 </p>
               </div>
               <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-800/50 transition-colors relative z-40">
@@ -413,6 +437,7 @@ export default function AdminDashboard() {
                   {/* Cấu hình nhắc lịch */}
                   <div className="space-y-3">
                     <h3 className="text-xs font-semibold text-cyan-400 font-mono tracking-wider uppercase">🔔 Thời gian & Nhắc lịch Tele</h3>
+                    
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 font-mono">NHẮC NV TRƯỚC CA (PHÚT)</label>

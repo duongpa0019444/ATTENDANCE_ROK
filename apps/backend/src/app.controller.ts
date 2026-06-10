@@ -40,6 +40,7 @@ export class AppController {
     const prepMins = await this.prisma.getSetting('PREPARATION_MINUTES', '0');
     const unconfirmedWarningMins = await this.prisma.getSetting('UNCONFIRMED_WARNING_MINUTES', '5');
     const checkinGraceMins = await this.prisma.getSetting('CHECKIN_GRACE_MINUTES', '5');
+    const shiftDayStartTime = await this.prisma.getSetting('SHIFT_DAY_START_TIME', '07:00');
 
     return {
       latitude: parseFloat(lat),
@@ -49,6 +50,7 @@ export class AppController {
       preparationMinutes: parseInt(prepMins, 10),
       unconfirmedWarningMinutes: parseInt(unconfirmedWarningMins, 10),
       checkinGraceMinutes: parseInt(checkinGraceMins, 10),
+      shiftDayStartTime,
     };
   }
 
@@ -65,6 +67,7 @@ export class AppController {
       preparationMinutes?: number;
       unconfirmedWarningMinutes?: number;
       checkinGraceMinutes?: number;
+      shiftDayStartTime?: string;
     },
   ) {
     await this.prisma.setSetting('OFFICE_LATITUDE', body.latitude.toString());
@@ -82,6 +85,9 @@ export class AppController {
     }
     if (body.checkinGraceMinutes !== undefined) {
       await this.prisma.setSetting('CHECKIN_GRACE_MINUTES', body.checkinGraceMinutes.toString());
+    }
+    if (body.shiftDayStartTime !== undefined) {
+      await this.prisma.setSetting('SHIFT_DAY_START_TIME', body.shiftDayStartTime);
     }
 
     return { success: true };

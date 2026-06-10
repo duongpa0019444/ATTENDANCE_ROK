@@ -7,6 +7,7 @@ export class ShiftsService {
   constructor(private prisma: PrismaService) {}
 
   async findAllShifts(weekStartDateStr?: string) {
+    console.log('ShiftsService.findAllShifts: weekStartDateStr =', weekStartDateStr, 'parsed Date =', weekStartDateStr ? new Date(weekStartDateStr) : 'none');
     const where: any = {};
     if (weekStartDateStr) {
       where.week_start_date = new Date(weekStartDateStr);
@@ -140,7 +141,7 @@ export class ShiftsService {
       where: { id },
       select: { week_start_date: true },
     });
-    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date))) {
+    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date, '12:00'))) {
       throw new BadRequestException('Ca làm này thuộc tuần đã chốt bảng lương. Không thể sửa.');
     }
 
@@ -193,7 +194,7 @@ export class ShiftsService {
       where: { id },
       select: { week_start_date: true },
     });
-    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date))) {
+    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date, '12:00'))) {
       throw new BadRequestException('Ca làm này thuộc tuần đã chốt bảng lương. Không thể xóa.');
     }
 
@@ -637,5 +638,18 @@ export class ShiftsService {
     }, {
       timeout: 50000
     });
+  }
+
+  async getWeeklyConfig(weekStartDate: string) {
+    const time = await this.prisma.getSetting(`WEEK_START_TIME_${weekStartDate}`, '07:00');
+    return { day_start_time: time };
+  }
+
+  async saveWeeklyConfig(weekStartDate: string, dayStartTime: string) {
+    if (await this.prisma.isDateLocked(new Date(weekStartDate), '12:00')) {
+      throw new BadRequestException('Tuần được chọn đã chốt bảng lương. Không thể chỉnh sửa cấu hình.');
+    }
+    await this.prisma.setSetting(`WEEK_START_TIME_${weekStartDate}`, dayStartTime);
+    return { success: true };
   }
 }

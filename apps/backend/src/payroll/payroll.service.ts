@@ -134,6 +134,32 @@ export class PayrollService {
       allowanceDates.map((allowance) => [this.formatDateOnly(allowance.work_date), allowance.amount]),
     );
 
+    const shiftDayBonuses = await this.prisma.shiftDayBonus.findMany({
+      where: {
+        work_date: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+    });
+    const shiftDayBonusMap = new Map<string, number>(
+      shiftDayBonuses.map((sdb) => [`${sdb.shift_id}_${this.formatDateOnly(sdb.work_date)}`, sdb.amount])
+    );
+
+    const serverWeekSalaries = await this.prisma.serverWeekSalary.findMany({
+      where: {
+        start_date: {
+          gte: startDate,
+        },
+        end_date: {
+          lte: endDate,
+        },
+      },
+    });
+    const serverWeekSalaryMap = new Map<string, number>(
+      serverWeekSalaries.map((sws) => [sws.server_id, sws.base_salary])
+    );
+
     // Fetch shift assignments
     const assignments = await this.prisma.shiftAssignment.findMany({
       where: {
@@ -160,14 +186,16 @@ export class PayrollService {
     // Grouping map
     const userPayrollMap = new Map<string, any>();
 
+    const shiftDayStartTime = await this.prisma.getShiftDayStartTimeForDate(startDateStr);
     const isRangeFilter = startDateStr !== endDateStr;
-    const startBoundary = `${startDateStr}T07:00:00`;
-    const endBoundary = `${endDateStr}T06:59:59`;
+    const startBoundaryDate = new Date(`${startDateStr}T${shiftDayStartTime}:00`);
+    const endBoundaryDate = new Date(`${endDateStr}T${shiftDayStartTime}:00`);
+    endBoundaryDate.setSeconds(endBoundaryDate.getSeconds() - 1);
 
     for (const assignment of assignments) {
       if (isRangeFilter) {
-        const assignmentTimeStr = `${this.formatDateOnly(assignment.work_date)}T${assignment.shift.start_time || '00:00'}:00`;
-        if (assignmentTimeStr < startBoundary || assignmentTimeStr > endBoundary) {
+        const assignmentTime = new Date(`${this.formatDateOnly(assignment.work_date)}T${assignment.shift.start_time || '00:00'}:00`);
+        if (assignmentTime < startBoundaryDate || assignmentTime > endBoundaryDate) {
           continue;
         }
       }
@@ -217,7 +245,8 @@ export class PayrollService {
 
         // 1. Base Salary
         const shiftBase = assignment.shift.base_salary;
-        const serverBase = assignment.shift.server?.base_salary;
+        const serverWeekBase = serverWeekSalaryMap.get(assignment.shift.server_id);
+        const serverBase = serverWeekBase !== undefined ? serverWeekBase : assignment.shift.server?.base_salary;
         baseSalary = shiftBase !== null && shiftBase !== undefined
           ? shiftBase
           : (serverBase !== null && serverBase !== undefined && serverBase > 0 ? serverBase : defaultSalary);
@@ -236,39 +265,41 @@ export class PayrollService {
           nightBonus = bonusNight3_7;
         }
 
-                        // 3. Weekend Bonus
+        // 3. Weekend Bonus
         // A shift gets weekend bonus if its start time falls within:
-        // 7:00 AM Saturday -> 6:59 AM Monday
+        // Saturday shiftDayStartTime -> Monday shiftDayStartTime
         const workDate = new Date(assignment.work_date);
         const [sh2, sm2] = startTime.split(':').map(Number);
         const shiftStartDateTime = new Date(workDate);
         shiftStartDateTime.setHours(sh2, sm2, 0, 0);
 
         // Calculate boundaries:
-        // Saturday 7:00 AM of the same week
         const dayOfWeek = workDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-        const saturday7am = new Date(workDate);
+        const saturdayStart = new Date(workDate);
         // Days to go back to Saturday:
-        // If Sun(0): go back 1 day -> Sat
-        // If Mon(1): go back 2 days -> Sat
-        // If Tue(2): go back 3 days -> Sat
-        // ... If Sat(6): go back 0 days -> Sat
         const daysBackToSat = (dayOfWeek + 1) % 7; // Sun=1, Mon=2, ..., Sat=0
-        saturday7am.setDate(workDate.getDate() - daysBackToSat);
-        saturday7am.setHours(7, 0, 0, 0);
+        saturdayStart.setDate(workDate.getDate() - daysBackToSat);
+        
+        const weekShiftDayStartTime = await this.prisma.getShiftDayStartTimeForDate(assignment.work_date);
+        const [bonusH, bonusM] = weekShiftDayStartTime.split(':').map(Number);
+        saturdayStart.setHours(bonusH, bonusM, 0, 0);
 
-        // Monday 7:00 AM = Saturday 7:00 AM + 2 days
-        const monday7am = new Date(saturday7am);
-        monday7am.setDate(monday7am.getDate() + 2);
-        monday7am.setHours(7, 0, 0, 0);
+        // Monday start = Saturday start + 2 days
+        const mondayStart = new Date(saturdayStart);
+        mondayStart.setDate(mondayStart.getDate() + 2);
+        mondayStart.setHours(bonusH, bonusM, 0, 0);
 
-        if (shiftStartDateTime >= saturday7am && shiftStartDateTime < monday7am) {
+        if (shiftStartDateTime >= saturdayStart && shiftStartDateTime < mondayStart) {
           weekendBonus = bonusWeekend;
         }
 
         // 4. Date-specific allowance
         appliedOtherAllowance = allowanceByDate.get(this.formatDateOnly(assignment.work_date)) || 0;
-        shiftReward = assignment.shift.bonus_salary || 0;
+        
+        const dayBonusKey = `${assignment.shift_id}_${this.formatDateOnly(assignment.work_date)}`;
+        shiftReward = shiftDayBonusMap.has(dayBonusKey)
+          ? (shiftDayBonusMap.get(dayBonusKey) ?? 0)
+          : (assignment.shift.bonus_salary || 0);
 
         // 5. Total Shift Salary
         totalSalary = baseSalary + nightBonus + weekendBonus + appliedOtherAllowance + shiftReward;
@@ -509,5 +540,128 @@ export class PayrollService {
     });
 
     return { success: true };
+  }
+
+  async getShiftDayBonuses(startDateStr?: string, endDateStr?: string) {
+    const where: any = {};
+    if (startDateStr && endDateStr) {
+      where.work_date = {
+        gte: this.parseDateOnly(startDateStr),
+        lte: this.parseDateOnly(endDateStr),
+      };
+    }
+    return this.prisma.shiftDayBonus.findMany({
+      where,
+      include: {
+        shift: {
+          include: {
+            server: true,
+          },
+        },
+      },
+      orderBy: { work_date: 'asc' },
+    });
+  }
+
+  async upsertShiftDayBonus(body: { shift_id: string; work_date: string; amount: number }) {
+    const workDate = this.parseDateOnly(body.work_date);
+    if (await this.prisma.isDateLocked(workDate, body.shift_id)) {
+      throw new BadRequestException('Ngày cấu hình này đã nằm trong giai đoạn chốt bảng lương. Không thể chỉnh sửa.');
+    }
+
+    return this.prisma.shiftDayBonus.upsert({
+      where: {
+        shift_id_work_date: {
+          shift_id: body.shift_id,
+          work_date: workDate,
+        },
+      },
+      update: {
+        amount: Number(body.amount) || 0,
+      },
+      create: {
+        shift_id: body.shift_id,
+        work_date: workDate,
+        amount: Number(body.amount) || 0,
+      },
+    });
+  }
+
+  async deleteShiftDayBonus(id: string) {
+    const existing = await this.prisma.shiftDayBonus.findUnique({ where: { id } });
+    if (!existing) {
+      throw new BadRequestException('Không tìm thấy cấu hình thưởng theo ca.');
+    }
+    if (await this.prisma.isDateLocked(existing.work_date, existing.shift_id)) {
+      throw new BadRequestException('Ngày cấu hình này đã nằm trong giai đoạn chốt bảng lương. Không thể xóa.');
+    }
+
+    return this.prisma.shiftDayBonus.delete({ where: { id } });
+  }
+
+  async getServerWeekSalaries(startDateStr: string, endDateStr: string) {
+    const start = this.parseDateOnly(startDateStr);
+    const end = this.parseDateOnly(endDateStr);
+    return this.prisma.serverWeekSalary.findMany({
+      where: {
+        start_date: start,
+        end_date: end,
+      },
+      include: {
+        server: true,
+      },
+      orderBy: { server: { name: 'asc' } },
+    });
+  }
+
+  async upsertServerWeekSalary(body: { server_id: string; start_date: string; end_date: string; base_salary: number }) {
+    const start = this.parseDateOnly(body.start_date);
+    const end = this.parseDateOnly(body.end_date);
+    const locked = await this.prisma.lockedPeriod.findFirst({
+      where: {
+        start_date: { lte: start },
+        end_date: { gte: end },
+      },
+    });
+    if (locked) {
+      throw new BadRequestException('Khoảng thời gian này đã nằm trong giai đoạn chốt bảng lương. Không thể chỉnh sửa.');
+    }
+
+    return this.prisma.serverWeekSalary.upsert({
+      where: {
+        server_id_start_date_end_date: {
+          server_id: body.server_id,
+          start_date: start,
+          end_date: end,
+        },
+      },
+      update: {
+        base_salary: Number(body.base_salary) || 0,
+      },
+      create: {
+        server_id: body.server_id,
+        start_date: start,
+        end_date: end,
+        base_salary: Number(body.base_salary) || 0,
+      },
+    });
+  }
+
+  async deleteServerWeekSalary(id: string) {
+    const existing = await this.prisma.serverWeekSalary.findUnique({ where: { id } });
+    if (!existing) {
+      throw new BadRequestException('Không tìm thấy cấu hình lương server theo tuần.');
+    }
+    const locked = await this.prisma.lockedPeriod.findFirst({
+      where: {
+        start_date: { lte: existing.start_date },
+        end_date: { gte: existing.end_date },
+      },
+    });
+    if (locked) {
+      throw new BadRequestException('Khoảng thời gian này đã nằm trong giai đoạn chốt bảng lương. Không thể xóa.');
+    }
+
+    return this.prisma.serverWeekSalary.delete({ where: { id } });
   }
 }

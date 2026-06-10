@@ -208,17 +208,20 @@ export class SchedulerService {
 
     const now = new Date();
 
-    // Calculate previous Monday 7:00 AM
+    // Calculate previous Monday
     const currentDay = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
     const daysBackToPrevMon = currentDay === 0 ? 6 : currentDay - 1; // If Sun, go back 6 days to previous Mon
     const prevMonday = new Date(now);
     prevMonday.setDate(now.getDate() - 7 - daysBackToPrevMon); // Go back to previous Monday (7 days before this Monday)
-    prevMonday.setHours(7, 0, 0, 0);
 
-    // This Monday 7:00 AM
+    const shiftDayStartTime = await this.prisma.getShiftDayStartTimeForDate(prevMonday);
+    const [lockH, lockM] = shiftDayStartTime.split(':').map(Number);
+    prevMonday.setHours(lockH, lockM, 0, 0);
+
+    // This Monday
     const thisMonday = new Date(prevMonday);
     thisMonday.setDate(thisMonday.getDate() + 7);
-    thisMonday.setHours(7, 0, 0, 0);
+    thisMonday.setHours(lockH, lockM, 0, 0);
 
     const startDateStr = this.payrollService.formatDateOnly(prevMonday);
     const endDateStr = this.payrollService.formatDateOnly(thisMonday);

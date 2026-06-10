@@ -114,6 +114,10 @@ export default function ShiftsPage() {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isServerDialogOpen, setIsServerDialogOpen] = useState(false);
   const [isShiftDialogOpen, setIsShiftDialogOpen] = useState(false);
+  const [isConfirmShiftDeleteModalOpen, setIsConfirmShiftDeleteModalOpen] = useState(false);
+  const [pendingConfigAction, setPendingConfigAction] = useState<{ isClone: boolean } | null>(null);
+  const [shiftingAssignmentsCount, setShiftingAssignmentsCount] = useState<number>(0);
+  const [assignmentsToDeleteIds, setAssignmentsToDeleteIds] = useState<string[]>([]);
 
   // Active cell edit details
   const [activeCell, setActiveCell] = useState<{ shift: any; dateStr: string; userIds: string[] } | null>(null);
@@ -167,6 +171,8 @@ export default function ShiftsPage() {
 
   // Excel Import States
   const [isImporting, setIsImporting] = useState(false);
+  const [currentWeekStartTime, setCurrentWeekStartTime] = useState<string>('07:00');
+  const [initWeekDayStartTime, setInitWeekDayStartTime] = useState<string>('07:00');
   const [excelUnmappedNames, setExcelUnmappedNames] = useState<string[]>([]);
   const [excelUserMap, setExcelUserMap] = useState<Record<string, string>>({});
   const [excelParsedData, setExcelParsedData] = useState<{
@@ -353,17 +359,24 @@ export default function ShiftsPage() {
 
           dateCols.forEach(({ colIdx, dateStr }) => {
             const cellValue = String(row[colIdx] || '').trim();
-            if (cellValue && cellValue.toLowerCase() !== 'x') {
-              const nameList = cellValue.split(/[,/+\n]/).map(n => n.trim()).filter(Boolean);
-              nameList.forEach(n => uniqueNamesInExcel.add(n));
+            const isXOnly = /^[xX\s.]+$/.test(cellValue);
+            if (cellValue && !isXOnly) {
+              const nameList = cellValue
+                .split(/[,/+\n]/)
+                .map(n => n.replace(/\s*\(.*/, '').trim())
+                .filter(Boolean);
+              
+              if (nameList.length > 0) {
+                nameList.forEach(n => uniqueNamesInExcel.add(n));
 
-              parsedAssignments.push({
-                serverName,
-                shiftName,
-                startTime: timeCell,
-                workDateStr: dateStr,
-                excelNames: nameList,
-              });
+                parsedAssignments.push({
+                  serverName,
+                  shiftName,
+                  startTime: timeCell,
+                  workDateStr: dateStr,
+                  excelNames: nameList,
+                });
+              }
             }
           });
         }
@@ -543,10 +556,11 @@ export default function ShiftsPage() {
     };
   }, [isFullscreen]);
 
-    // Compute 8 days: from Monday of selected week to Monday of next week
-  const weekDays = Array.from({ length: 8 }).map((_, i) => addDays(selectedDate, i));
+    // Compute days: 7 days if starting at 00:00, 8 days if starting at 07:00 (to cover Sunday late night shifts ending Monday morning)
+  const numDays = currentWeekStartTime === '00:00' ? 7 : 8;
+  const weekDays = Array.from({ length: numDays }).map((_, i) => addDays(selectedDate, i));
   
-    // Helper: check if a shift+date combo belongs to the current week (7AM Mon -> 6:59AM next Mon)
+    // Helper: check if a shift+date combo belongs to the current week (7AM Mon -> 6:59AM next Mon by default)
   const isShiftInCurrentWeek = useCallback((shift: any, day: Date): boolean => {
     const weekStartMon = selectedDate;
     const nextWeekMon = addDays(weekStartMon, 7);
@@ -558,15 +572,17 @@ export default function ShiftsPage() {
     const cellDate = new Date(day);
     cellDate.setHours(sh, sm, 0, 0);
     
-    // Week boundaries: 7:00 AM
+    // Week boundaries
+    const [h, m] = currentWeekStartTime.split(':').map(Number);
+
     const weekStart = new Date(weekStartMon);
-    weekStart.setHours(7, 0, 0, 0);
+    weekStart.setHours(h, m, 0, 0);
     
     const weekEnd = new Date(nextWeekMon);
-    weekEnd.setHours(7, 0, 0, 0);
+    weekEnd.setHours(h, m, 0, 0);
     
     return cellDate >= weekStart && cellDate < weekEnd;
-  }, [selectedDate]);
+  }, [selectedDate, currentWeekStartTime]);
 
   const getDatabaseWorkDate = useCallback((shift: any, day: Date): Date => {
     return day;
@@ -637,6 +653,20 @@ export default function ShiftsPage() {
       if (settingsRes && settingsRes.ok) {
         const settData = await settingsRes.json();
         setSystemSettings(settData);
+      }
+
+      // Fetch weekly config
+      try {
+        const configRes = await apiFetch(`${API_URL}/shifts/weekly-config?week_start_date=${startStr}`);
+        if (configRes.ok) {
+          const configData = await configRes.json();
+          setCurrentWeekStartTime(configData.day_start_time || '07:00');
+        } else {
+          setCurrentWeekStartTime('07:00');
+        }
+      } catch (err) {
+        console.error('Failed to fetch weekly config:', err);
+        setCurrentWeekStartTime('07:00');
       }
 
       // Sort shifts:
@@ -852,6 +882,96 @@ export default function ShiftsPage() {
     }
   };
 
+  const executeSaveWeeklyConfigAndAction = async (isClone: boolean, deleteAssignments: boolean) => {
+    try {
+      const startStr = dialogWeekStr || format(selectedDate, 'yyyy-MM-dd');
+      
+      if (deleteAssignments && assignmentsToDeleteIds.length > 0) {
+        setIsImporting(true); // show loader
+        await Promise.all(
+          assignmentsToDeleteIds.map(id => 
+            apiFetch(`${API_URL}/shifts/assignments/${id}`, {
+              method: 'DELETE'
+            })
+          )
+        );
+        setIsImporting(false);
+      }
+
+      // Save weekly configuration
+      const res = await apiFetch(`${API_URL}/shifts/weekly-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          week_start_date: startStr,
+          day_start_time: initWeekDayStartTime,
+        }),
+      });
+
+      if (res.ok) {
+        setIsConfirmShiftDeleteModalOpen(false);
+        setPendingConfigAction(null);
+        setAssignmentsToDeleteIds([]);
+        setShiftingAssignmentsCount(0);
+        
+        if (isClone) {
+          await handleCloneWeek();
+        } else {
+          handleCloseInitDialog();
+          fetchData();
+        }
+      } else {
+        const err = await res.json();
+        alert(`Không thể khởi tạo cấu hình tuần: ${err.message || 'Lỗi server'}`);
+      }
+    } catch (e) {
+      console.error(e);
+      setIsImporting(false);
+      alert('Lỗi kết nối khi khởi tạo cấu hình tuần.');
+    }
+  };
+
+  const handleSaveWeeklyConfigAndAction = async (isClone: boolean) => {
+    try {
+      const startStr = dialogWeekStr || format(selectedDate, 'yyyy-MM-dd');
+      
+      // If editing day start time and assignments exist, identify which ones fall outside the new boundary
+      if (assignments.length > 0 && initWeekDayStartTime !== currentWeekStartTime) {
+        const [h, m] = initWeekDayStartTime.split(':').map(Number);
+        const weekStartMon = selectedDate;
+        const nextWeekMon = addDays(weekStartMon, 7);
+        
+        const weekStart = new Date(weekStartMon);
+        weekStart.setHours(h, m, 0, 0);
+        
+        const weekEnd = new Date(nextWeekMon);
+        weekEnd.setHours(h, m, 0, 0);
+
+        const assignmentsToDelete = assignments.filter((a: any) => {
+          const [sh, sm] = (a.shift?.start_time || '00:00').split(':').map(Number);
+          const cellDate = new Date(a.work_date);
+          cellDate.setHours(sh, sm, 0, 0);
+          return cellDate < weekStart || cellDate >= weekEnd;
+        });
+
+        if (assignmentsToDelete.length > 0) {
+          // Open custom confirmation modal instead of confirm prompt
+          setPendingConfigAction({ isClone });
+          setShiftingAssignmentsCount(assignmentsToDelete.length);
+          setAssignmentsToDeleteIds(assignmentsToDelete.map(a => a.id));
+          setIsInitWeekDialogOpen(false);
+          setIsConfirmShiftDeleteModalOpen(true);
+          return;
+        }
+      }
+
+      // If no assignments to delete, save immediately
+      await executeSaveWeeklyConfigAndAction(isClone, false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleCloneWeek = async () => {
     try {
       const prevWeekDate = addDays(selectedDate, -7);
@@ -1061,12 +1181,12 @@ export default function ShiftsPage() {
               <DatePicker
                 selected={selectedDate}
                 startDate={selectedDate}
-                endDate={addDays(selectedDate, 7)}
+                endDate={addDays(selectedDate, currentWeekStartTime === '00:00' ? 6 : 7)}
                 onChange={(date: Date | null) => {
                   if (date) setSelectedDate(startOfWeek(date, { weekStartsOn: 1 }));
                 }}
                 showWeekPicker
-                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 7), 'dd/MM')}`}
+                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, currentWeekStartTime === '00:00' ? 6 : 7), 'dd/MM')}`}
                 formatWeekDay={formatWeekDayLabel}
                 portalId="shift-week-datepicker-portal"
                 popperClassName="shift-week-datepicker-popper"
@@ -1075,8 +1195,27 @@ export default function ShiftsPage() {
               />
             </div>
 
-            <div className="text-xs text-slate-500 font-mono">
-              Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Thứ 2 sau ({format(weekDays[7], 'dd/MM')}) (7h sáng → 6h59 sáng hôm sau)
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-slate-500 font-mono text-right">
+                {weekDays.length === 8 && weekDays[7] ? (
+                  `Thứ 2 (${format(weekDays[0], 'dd/MM')}) - Thứ 2 sau (${format(weekDays[7], 'dd/MM')}) (${currentWeekStartTime} sáng → trước ${currentWeekStartTime} sáng hôm sau)`
+                ) : (
+                  `Thứ 2 (${format(weekDays[0], 'dd/MM')}) - Chủ Nhật (${format(weekDays[6], 'dd/MM')}) (00h00 → 23h59)`
+                )}
+              </div>
+              <Button
+                disabled={isWeekLocked}
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setInitWeekDayStartTime(currentWeekStartTime);
+                  setDialogWeekStr(format(selectedDate, 'yyyy-MM-dd'));
+                  setIsInitWeekDialogOpen(true);
+                }}
+                className="h-8 px-2.5 bg-slate-900 border-slate-800 text-slate-350 hover:text-cyan-400 hover:bg-slate-850 rounded-lg active:scale-95 disabled:opacity-55 disabled:cursor-not-allowed text-xs font-semibold shrink-0"
+              >
+                Cài đặt giờ bắt đầu
+              </Button>
             </div>
           </div>
           </div>
@@ -1791,50 +1930,142 @@ export default function ShiftsPage() {
           <DialogContent className="bg-slate-900 text-white border-slate-800 rounded-xl sm:max-w-[460px]">
             <DialogHeader>
               <DialogTitle className="text-lg font-bold flex items-center gap-2">
-                <Calendar className="w-5.5 h-5.5 text-cyan-400" /> Khởi Tạo Tuần Mới
+                <Calendar className="w-5.5 h-5.5 text-cyan-400" /> {shifts.length > 0 ? 'Cấu Hình Giờ Bắt Đầu Tuần' : 'Khởi Tạo Tuần Mới'}
               </DialogTitle>
               <DialogDescription className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-                Tuần từ <strong className="text-slate-200">{dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''}</strong> đến <strong className="text-slate-200">{dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 7), 'dd/MM/yyyy') : ''}</strong> chưa được khởi tạo ca làm việc nào.
+                {shifts.length > 0
+                  ? `Điều chỉnh cấu hình cho tuần từ ${dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''} đến ${dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 7), 'dd/MM/yyyy') : ''}.`
+                  : `Tuần từ ${dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''} đến ${dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 7), 'dd/MM/yyyy') : ''} chưa được khởi tạo ca làm việc nào.`}
               </DialogDescription>
             </DialogHeader>
 
             <div className="py-4 text-sm text-slate-350 space-y-4 leading-relaxed">
-              <p className="text-slate-400">
-                Vui lòng chọn phương thức thiết lập lịch làm việc cho tuần này:
-              </p>
+              {shifts.length === 0 && (
+                <p className="text-slate-400">
+                  Vui lòng chọn phương thức thiết lập lịch làm việc cho tuần này:
+                </p>
+              )}
               
-              <div className="space-y-3.5 bg-slate-950/40 p-4 border border-slate-800/60 rounded-xl">
-                <div className="flex gap-2.5 items-start">
-                  <div className="w-5 h-5 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">1</div>
-                  <div>
-                    <strong className="text-slate-100 font-semibold block text-sm">Kế thừa ca trực từ tuần trước:</strong>
-                    <span className="text-xs text-slate-400">Tự động sao chép toàn bộ danh sách ca làm (khung giờ + server) của tuần trước sang tuần này (các ô gán nhân sự sẽ để trống).</span>
-                  </div>
-                </div>
-                
-                <div className="flex gap-2.5 items-start border-t border-slate-800/60 pt-3.5">
-                  <div className="w-5 h-5 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">2</div>
-                  <div>
-                    <strong className="text-slate-100 font-semibold block text-sm">Bắt đầu tuần mới trống:</strong>
-                    <span className="text-xs text-slate-400">Tạo một tuần trống hoàn toàn để bạn tự thiết lập và thêm các khung giờ thủ công từ đầu.</span>
-                  </div>
-                </div>
+              <div className="space-y-1.5 bg-slate-950/40 p-4 border border-slate-800/60 rounded-xl mb-3 flex flex-col">
+                <label className="text-xs font-bold text-cyan-400 font-mono">CHỌN GIỜ BẮT ĐẦU NGÀY LÀM VIỆC (*)</label>
+                <select
+                  value={initWeekDayStartTime}
+                  onChange={(e) => setInitWeekDayStartTime(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20 focus-visible:border-cyan-500 rounded p-2 mt-1"
+                >
+                  <option value="07:00">07:00 (Mặc định)</option>
+                  <option value="00:00">00:00 (Bình thường)</option>
+                </select>
+                <p className="text-[10px] text-slate-500 font-sans mt-1">
+                  💡 Giờ bắt đầu ngày quyết định cách tính lương thưởng cuối tuần và biên ngày của cả tuần này.
+                </p>
               </div>
+              
+              {shifts.length === 0 && (
+                <div className="space-y-3.5 bg-slate-950/40 p-4 border border-slate-800/60 rounded-xl">
+                  <div className="flex gap-2.5 items-start">
+                    <div className="w-5 h-5 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">1</div>
+                    <div>
+                      <strong className="text-slate-100 font-semibold block text-sm">Kế thừa ca trực từ tuần trước:</strong>
+                      <span className="text-xs text-slate-400">Tự động sao chép toàn bộ danh sách ca làm (khung giờ + server) của tuần trước sang tuần này (các ô gán nhân sự sẽ để trống).</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2.5 items-start border-t border-slate-800/60 pt-3.5">
+                    <div className="w-5 h-5 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">2</div>
+                    <div>
+                      <strong className="text-slate-100 font-semibold block text-sm">Bắt đầu tuần mới trống:</strong>
+                      <span className="text-xs text-slate-400">Tạo một tuần trống hoàn toàn để bạn tự thiết lập và thêm các khung giờ thủ công từ đầu.</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <DialogFooter className="gap-2 sm:justify-between flex flex-col sm:flex-row">
+              {shifts.length > 0 ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsInitWeekDialogOpen(false);
+                      setDialogWeekStr(null);
+                    }}
+                    className="border-slate-800 text-slate-350 hover:bg-slate-850 hover:text-white rounded-lg h-10 px-4"
+                  >
+                    Hủy bỏ
+                  </Button>
+                  <Button
+                    onClick={() => handleSaveWeeklyConfigAndAction(false)}
+                    className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98]"
+                  >
+                    Lưu cấu hình
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSaveWeeklyConfigAndAction(false)}
+                    className="border-slate-800 text-slate-300 hover:bg-slate-850 hover:text-white rounded-lg h-10 px-4"
+                  >
+                    Bắt đầu tuần mới trống
+                  </Button>
+                  <Button
+                    onClick={() => handleSaveWeeklyConfigAndAction(true)}
+                    className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98]"
+                  >
+                    Kế thừa ca trực từ tuần trước
+                  </Button>
+                </>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* DIALOG: CONFIRM SHIFT DELETE MODAL */}
+        <Dialog open={isConfirmShiftDeleteModalOpen} onOpenChange={setIsConfirmShiftDeleteModalOpen}>
+          <DialogContent className="bg-slate-900 text-white border-slate-800 rounded-xl sm:max-w-[460px]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2 text-amber-400">
+                <AlertTriangle className="w-5.5 h-5.5 text-amber-400" /> Xác Nhận Thay Đổi Cấu Hình Giờ
+              </DialogTitle>
+              <DialogDescription className="text-slate-600 dark:text-slate-400 text-sm mt-1">
+                Thay đổi giờ bắt đầu ngày từ <strong className="text-cyan-600 dark:text-cyan-400 font-extrabold">{currentWeekStartTime}</strong> sang <strong className="text-cyan-600 dark:text-cyan-400 font-extrabold">{initWeekDayStartTime}</strong> sẽ làm xóa <strong className="text-cyan-600 dark:text-cyan-400 font-extrabold">{shiftingAssignmentsCount}</strong> ca trực đã phân công nằm ngoài khung giờ mới.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-4 text-sm text-slate-700 dark:text-slate-300 space-y-3 leading-relaxed">
+              <p className="font-semibold text-slate-850 dark:text-slate-200">
+                Chú ý quan trọng:
+              </p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                Các ca trực bị lệch ngoài khung giờ tuần mới sẽ bị <strong className="text-red-600 dark:text-red-400">xóa hoàn toàn</strong> khỏi hệ thống để tránh hiển thị sai lệch dữ liệu. Bạn có chắc chắn muốn tiếp tục?
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2 flex-col sm:flex-row">
               <Button
                 variant="outline"
-                onClick={handleCloseInitDialog}
-                className="border-slate-800 text-slate-300 hover:bg-slate-850 hover:text-white rounded-lg h-10 px-4"
+                onClick={() => {
+                  setIsConfirmShiftDeleteModalOpen(false);
+                  setPendingConfigAction(null);
+                  setAssignmentsToDeleteIds([]);
+                  setShiftingAssignmentsCount(0);
+                }}
+                className="border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg h-10 px-4"
               >
-                Bắt đầu tuần mới trống
+                Hủy bỏ
               </Button>
               <Button
-                onClick={handleCloneWeek}
-                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98]"
+                onClick={() => {
+                  if (pendingConfigAction) {
+                    executeSaveWeeklyConfigAndAction(pendingConfigAction.isClone, true);
+                  }
+                }}
+                className="bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98]"
               >
-                Kế thừa ca trực từ tuần trước
+                Xác nhận xóa & Lưu cấu hình
               </Button>
             </DialogFooter>
           </DialogContent>
