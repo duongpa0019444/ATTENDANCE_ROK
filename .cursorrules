@@ -1,0 +1,68 @@
+# Project-Specific AI Rules: Realtime Shift Attendance Platform (Monorepo)
+
+Chào mừng bạn đến với dự án MVP Realtime Shift Attendance Platform. Hãy tuân thủ nghiêm ngặt các hướng dẫn và bối cảnh dưới đây khi phát triển hoặc sửa đổi dự án này.
+
+---
+
+## 🏗️ Cấu trúc dự án (Project Monorepo Structure)
+Dự án được cấu trúc dạng monorepo với hai ứng dụng chính nằm dưới thư mục `apps/`:
+
+1. **Frontend (`apps/frontend`)**: 
+   - Framework: Next.js (App Router, React)
+   - Styling: Tailwind CSS, shadcn/ui (UI library)
+   - State Management: Zustand
+   - Realtime: Socket.IO Client
+   - Path tham chiếu: `apps/frontend/src`
+2. **Backend (`apps/backend`)**:
+   - Framework: NestJS (TypeScript)
+   - Database ORM: Prisma ORM (kết nối PostgreSQL)
+   - Background Jobs: BullMQ & Redis
+   - Realtime: Socket.IO Server
+   - Integration: Telegram Bot (Telegraf)
+   - Path tham chiếu: `apps/backend/src`
+3. **Database Schema (`apps/backend/prisma/schema.prisma`)**:
+   - Chứa định nghĩa các bảng: `User`, `Server` (kênh/máy chủ), `Shift` (ca làm), `ShiftAssignment` (phân ca), `AttendanceLog` (điểm danh), `Notification`, `EscalationLog` (escalate điểm danh trễ), `LockedPeriod` & `LockedPayroll` (chốt lương).
+
+---
+
+## 🎨 Quy chuẩn phát triển Frontend (`apps/frontend`)
+- **App Router**: Luôn sử dụng mô hình Next.js App Router (sử dụng thư mục `src/app`).
+- **Client Component vs Server Component**: 
+  - Đánh dấu `'use client';` rõ ràng ở đầu file nếu có dùng react hooks (`useState`, `useEffect`, etc.).
+  - Giữ các component hiển thị dữ liệu tĩnh ở dạng Server Component nếu có thể.
+- **Styling & UI**:
+  - Sử dụng TailwindCSS kết hợp với thư viện component `shadcn/ui` (ví dụ: `Card`, `Button`, `Table`, `Dialog`, `Badge` được import từ `@/components/ui/...`).
+  - Style UI nên theo hướng hiện đại, bóng bẩy (dark/slate theme chủ đạo, border mịn màng, hover mượt mà).
+  - Không viết đè style tùy tiện hoặc code inline style quá phức tạp trừ các thư viện đặc thù (như `react-select`).
+- **State Management**:
+  - Sử dụng **Zustand** cho các global state (như auth, realtime notifications).
+  - Sử dụng API helper `apiFetch` từ `@/lib/api` để tự động hóa header, cookies, và quản lý baseUrl của backend.
+
+---
+
+## ⚙️ Quy chuẩn phát triển Backend (`apps/backend`)
+- **Kiến trúc NestJS**:
+  - Tuân thủ nghiêm ngặt mô hình module: Controller nhận request/định tuyến -> Service thực thi Business Logic -> Prisma làm nhiệm vụ truy xuất dữ liệu.
+  - Sử dụng các Class Validator và DTO (`src/.../*.dto.ts`) để validate dữ liệu đầu vào.
+- **Cơ sở dữ liệu (Prisma)**:
+  - Tham chiếu file schema tại `apps/backend/prisma/schema.prisma`.
+  - Luôn cập nhật client bằng `npx prisma generate` khi sửa đổi schema.
+  - Tối ưu hóa các truy vấn Prisma bằng `select` hoặc `include` chỉ khi cần thiết nhằm tránh overhead dữ liệu.
+- **Hệ thống hàng đợi (Queue & Background Workers)**:
+  - Sử dụng BullMQ kết hợp Redis để xếp hàng và xử lý các tác vụ ngầm (ví dụ: tự động gửi cảnh báo Telegram, xử lý logic điểm danh muộn).
+- **Tích hợp Telegram Bot**:
+  - Sử dụng thư viện `Telegraf` để đồng bộ và gửi thông báo hoặc link tài khoản nhân viên qua bot Telegram (`telegram_id`, `telegram_username`).
+
+---
+
+## 💡 Coding Conventions chung
+- **TypeScript**:
+  - Luôn viết code strict type. Hạn chế tối đa sử dụng kiểu `any`, luôn định nghĩa interface/type cho API response và payload.
+- **Đặt tên (Naming Convention)**:
+  - Đặt tên File & Thư mục: Dùng `kebab-case` cho các folder và component file hoặc route files (ví dụ: `import-excel.dto.ts`, `telegram-link.controller.ts`).
+  - Code (TS/JS):
+    - Biến & Hàm: `camelCase` (ví dụ: `fetchData`, `selectedDate`).
+    - API & Payload Database: Trùng khớp với schema Prisma (`snake_case` cho các field như `work_date`, `shift_id`, `user_id`).
+    - Class / Component React: `PascalCase` (ví dụ: `ShiftsPage`, `AttendanceLog`).
+- **Realtime**:
+  - Socket.IO phải được dọn dẹp cẩn thận bằng cách tắt kết nối (`socket.off`) khi Component React unmounter.

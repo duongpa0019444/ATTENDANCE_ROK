@@ -140,7 +140,7 @@ export class ShiftsService {
       where: { id },
       select: { week_start_date: true },
     });
-    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date))) {
+    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date, '12:00'))) {
       throw new BadRequestException('Ca làm này thuộc tuần đã chốt bảng lương. Không thể sửa.');
     }
 
@@ -193,7 +193,7 @@ export class ShiftsService {
       where: { id },
       select: { week_start_date: true },
     });
-    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date))) {
+    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date, '12:00'))) {
       throw new BadRequestException('Ca làm này thuộc tuần đã chốt bảng lương. Không thể xóa.');
     }
 
