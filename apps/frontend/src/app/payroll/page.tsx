@@ -11,11 +11,13 @@ import { format, startOfMonth, parseISO } from 'date-fns';
 import {
   Calendar, Download, Settings, Save,
   Server, Clock, Loader2, Sparkles, ArrowRight,
-  Lock, Unlock, ShieldAlert, ChevronLeft, ChevronRight
+  Lock, Unlock, ShieldAlert, ChevronLeft, ChevronRight,
+  Plus, Trash2, Edit2
 } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { vi } from 'date-fns/locale';
+import Select from 'react-select';
 
 registerLocale('vi', vi);
 
@@ -89,6 +91,37 @@ interface PayrollAllowance {
   note?: string | null;
 }
 
+const reactSelectStyles = {
+  control: (base: any, state: any) => ({
+    ...base,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    borderColor: state.isFocused ? '#22d3ee' : '#1e293b',
+    color: 'white',
+    minHeight: '34px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    boxShadow: state.isFocused ? '0 0 0 1px rgba(34, 211, 238, 0.5)' : 'none',
+    '&:hover': { borderColor: state.isFocused ? '#22d3ee' : '#334155' }
+  }),
+  menu: (base: any) => ({
+    ...base,
+    backgroundColor: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: '6px',
+    zIndex: 9999
+  }),
+  option: (base: any, state: any) => ({
+    ...base,
+    backgroundColor: state.isSelected ? '#0891b2' : state.isFocused ? '#1e293b' : 'transparent',
+    color: 'white',
+    fontSize: '12px',
+    cursor: 'pointer',
+    '&:active': { backgroundColor: '#0e7490' }
+  }),
+  singleValue: (base: any) => ({ ...base, color: 'white' }),
+  placeholder: (base: any) => ({ ...base, color: '#64748b' })
+};
+
 export default function PayrollPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
@@ -123,6 +156,10 @@ export default function PayrollPage() {
   const [payrollData, setPayrollData] = useState<PayrollRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedStaff, setSelectedStaff] = useState<PayrollRecord | null>(null);
+  const [isShiftBonusDialogOpen, setIsShiftBonusDialogOpen] = useState<boolean>(false);
+  const [isServerSalaryDialogOpen, setIsServerSalaryDialogOpen] = useState<boolean>(false);
+  const [selectedServerId, setSelectedServerId] = useState<string>('');
+  const [isSavingServerSalary, setIsSavingServerSalary] = useState<boolean>(false);
 
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [isCheckingLock, setIsCheckingLock] = useState<boolean>(false);
@@ -169,6 +206,9 @@ export default function PayrollPage() {
   const [allowanceAmountInput, setAllowanceAmountInput] = useState<string>('');
   const [allowanceNoteInput, setAllowanceNoteInput] = useState<string>('');
   const [isSavingAllowance, setIsSavingAllowance] = useState<boolean>(false);
+  const [selectedShiftId, setSelectedShiftId] = useState<string>('');
+  const [selectedShiftBonusDays, setSelectedShiftBonusDays] = useState<string[]>(['2', '3', '4', '5', '6', '7', 'CN']);
+  const [isSavingShiftBonus, setIsSavingShiftBonus] = useState<boolean>(false);
 
   const checkLockStatus = useCallback(async () => {
     setIsCheckingLock(true);
@@ -272,14 +312,14 @@ export default function PayrollPage() {
       }
 
       // 2. Servers
-      const serversRes = await apiFetch(`${API_URL}/servers`);
+      const serversRes = await apiFetch(`${API_URL}/servers?week_start_date=${startDate}`);
       if (serversRes.ok) {
         const data = await serversRes.json();
         setServers(data);
       }
 
       // 3. Shifts
-      const shiftsRes = await apiFetch(`${API_URL}/shifts`);
+      const shiftsRes = await apiFetch(`${API_URL}/shifts?week_start_date=${startDate}`);
       if (shiftsRes.ok) {
         const data = await shiftsRes.json();
         setShifts(data);
@@ -293,7 +333,7 @@ export default function PayrollPage() {
     } catch (err) {
       console.error('Error fetching configuration details:', err);
     }
-  }, [API_URL]);
+  }, [API_URL, startDate]);
 
   useEffect(() => {
     fetchPayroll();
@@ -378,22 +418,36 @@ export default function PayrollPage() {
     }
   };
 
-  const handleUpdateServerSalary = async (serverId: string) => {
+  const handleSaveServerSalary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedServerId) return;
+    setIsSavingServerSalary(true);
+    setSettingsMessage(null);
     try {
-      const res = await apiFetch(`${API_URL}/servers/${serverId}`, {
+      const res = await apiFetch(`${API_URL}/servers/${selectedServerId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           base_salary: parseFloat(serverBaseSalaryInput) || 0,
+          week_start_date: startDate,
         }),
       });
       if (res.ok) {
-        setEditingServerId(null);
+        setIsServerSalaryDialogOpen(false);
+        setSelectedServerId('');
+        setServerBaseSalaryInput('');
+        setSettingsMessage({ type: 'success', text: 'Cấu hình lương server đã được lưu!' });
         fetchSettingsAndEntities();
         fetchPayroll();
+        setTimeout(() => setSettingsMessage(null), 3000);
+      } else {
+        setSettingsMessage({ type: 'error', text: 'Không thể lưu cấu hình lương server.' });
       }
     } catch (err) {
       console.error('Failed to update server salary:', err);
+      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu cấu hình.' });
+    } finally {
+      setIsSavingServerSalary(false);
     }
   };
 
@@ -417,6 +471,60 @@ export default function PayrollPage() {
       }
     } catch (err) {
       console.error('Failed to update shift salary:', err);
+    }
+  };
+
+  const handleShiftSelect = (shiftId: string) => {
+    setSelectedShiftId(shiftId);
+    const shift = shifts.find(s => s.id === shiftId);
+    if (shift) {
+      setShiftBonusSalaryInput(shift.bonus_salary ? String(shift.bonus_salary) : '');
+      if (shift.bonus_days) {
+        setSelectedShiftBonusDays(shift.bonus_days.split(','));
+      } else {
+        setSelectedShiftBonusDays(['2', '3', '4', '5', '6', '7', 'CN']);
+      }
+    } else {
+      setShiftBonusSalaryInput('');
+      setSelectedShiftBonusDays(['2', '3', '4', '5', '6', '7', 'CN']);
+    }
+  };
+
+  const handleSaveShiftBonus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedShiftId) return;
+    setIsSavingShiftBonus(true);
+    setSettingsMessage(null);
+    try {
+      const shift = shifts.find(s => s.id === selectedShiftId);
+      const baseSalary = shift ? shift.base_salary : null;
+      const bonusSalary = parseFloat(shiftBonusSalaryInput) || 0;
+      const bonusDays = selectedShiftBonusDays.join(',');
+
+      const res = await apiFetch(`${API_URL}/shifts/${selectedShiftId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_salary: baseSalary,
+          bonus_salary: bonusSalary,
+          bonus_days: bonusDays,
+        }),
+      });
+
+      if (res.ok) {
+        setSettingsMessage({ type: 'success', text: 'Cấu hình thưởng ca đã được lưu!' });
+        fetchSettingsAndEntities();
+        fetchPayroll();
+        setIsShiftBonusDialogOpen(false);
+        setTimeout(() => setSettingsMessage(null), 3000);
+      } else {
+        setSettingsMessage({ type: 'error', text: 'Không thể lưu cấu hình thưởng ca.' });
+      }
+    } catch (err) {
+      console.error('Failed to save shift bonus:', err);
+      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu cấu hình.' });
+    } finally {
+      setIsSavingShiftBonus(false);
     }
   };
 
@@ -448,6 +556,21 @@ export default function PayrollPage() {
   const totalPayrollCost = payrollData.reduce((acc, curr) => acc + curr.totalSalary, 0);
   const totalCompletedShifts = payrollData.reduce((acc, curr) => acc + curr.completedShifts, 0);
   const averageShiftSalary = totalCompletedShifts > 0 ? totalPayrollCost / totalCompletedShifts : 0;
+
+  const shiftOptions = shifts.map((shift) => ({
+    value: shift.id,
+    label: `${shift.server?.name || 'N/A'} - ${shift.name || ''} (${shift.start_time})`,
+    serverName: shift.server?.name || 'N/A',
+    name: shift.name,
+    startTime: shift.start_time,
+  }));
+
+  const serverSelectOptions = servers
+    .filter((server: any) => !server.name.includes('+'))
+    .map((server: any) => ({
+      value: server.id,
+      label: server.name,
+    }));
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 p-4 sm:p-6 font-sans selection:bg-cyan-500/30">
@@ -760,94 +883,96 @@ export default function PayrollPage() {
               </div>
             )}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-            {/* System settings form */}
-            <Card className="bg-slate-900/40 border-slate-850 backdrop-blur-xl lg:col-span-1 h-fit">
-              <CardHeader className="border-b border-slate-850 pb-3">
-                <CardTitle className="text-base text-slate-200 flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-cyan-400" />
-                  Cấu Hình Thù Lao Chung
-                </CardTitle>
-                <CardDescription className="text-slate-400 text-xs">Cài đặt phụ cấp hệ thống và mức thù lao mặc định</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <form onSubmit={handleSaveSystemSettings} className="space-y-4 text-sm">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (22H - 3H)</label>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift22_3Bonus)}
-                      onChange={(e) => {
-                        const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
-                        setSystemSettings({ ...systemSettings, nightShift22_3Bonus: isNaN(raw) ? 0 : raw });
-                      }}
-                      required
-                      className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (SAU 3H - 7H)</label>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift3_7Bonus)}
-                      onChange={(e) => {
-                        const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
-                        setSystemSettings({ ...systemSettings, nightShift3_7Bonus: isNaN(raw) ? 0 : raw });
-                      }}
-                      required
-                      className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CUỐI TUẦN (T7/CN)</label>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      value={new Intl.NumberFormat('vi-VN').format(systemSettings.weekendBonus)}
-                      onChange={(e) => {
-                        const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
-                        setSystemSettings({ ...systemSettings, weekendBonus: isNaN(raw) ? 0 : raw });
-                      }}
-                      required
-                      className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 font-mono">LƯƠNG CƠ BẢN THEO CA</label>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      value={new Intl.NumberFormat('vi-VN').format(systemSettings.defaultServerSalary)}
-                      onChange={(e) => {
-                        const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
-                        setSystemSettings({ ...systemSettings, defaultServerSalary: isNaN(raw) ? 0 : raw });
-                      }}
-                      required
-                      className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
-                    />
-                  </div>
-                  {settingsMessage && (
-                    <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
-                      ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                      : 'bg-red-500/10 border-red-500/20 text-red-400'
-                      }`}>
-                      {settingsMessage.text}
+              {/* Left Column: System settings and Shift settings */}
+              <div className="lg:col-span-1 space-y-6">
+              {/* System settings form */}
+              <Card className="bg-slate-900/40 border-slate-850 backdrop-blur-xl h-fit">
+                <CardHeader className="border-b border-slate-850 pb-3">
+                  <CardTitle className="text-base text-slate-200 flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-cyan-400" />
+                    Cấu Hình Thù Lao Chung
+                  </CardTitle>
+                  <CardDescription className="text-slate-400 text-xs">Cài đặt phụ cấp hệ thống và mức thù lao mặc định</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <form onSubmit={handleSaveSystemSettings} className="space-y-4 text-sm">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (22H - 3H)</label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift22_3Bonus)}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
+                          setSystemSettings({ ...systemSettings, nightShift22_3Bonus: isNaN(raw) ? 0 : raw });
+                        }}
+                        required
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+                      />
                     </div>
-                  )}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (SAU 3H - 7H)</label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift3_7Bonus)}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
+                          setSystemSettings({ ...systemSettings, nightShift3_7Bonus: isNaN(raw) ? 0 : raw });
+                        }}
+                        required
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CUỐI TUẦN (T7/CN)</label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.weekendBonus)}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
+                          setSystemSettings({ ...systemSettings, weekendBonus: isNaN(raw) ? 0 : raw });
+                        }}
+                        required
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">LƯƠNG CƠ BẢN THEO CA</label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.defaultServerSalary)}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
+                          setSystemSettings({ ...systemSettings, defaultServerSalary: isNaN(raw) ? 0 : raw });
+                        }}
+                        required
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+                      />
+                    </div>
+                    {settingsMessage && (
+                      <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
+                        ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                        : 'bg-red-500/10 border-red-500/20 text-red-400'
+                        }`}>
+                        {settingsMessage.text}
+                      </div>
+                    )}
 
-                  <Button
-                    type="submit"
-                    disabled={isSavingSettings}
-                    className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs h-9 rounded flex items-center justify-center gap-1.5"
-                  >
-                    {isSavingSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                    Lưu Cấu Hình
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
+                    <Button
+                      type="submit"
+                      disabled={isSavingSettings}
+                      className="w-full bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs h-9 rounded flex items-center justify-center gap-1.5"
+                    >
+                      {isSavingSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      Lưu Cấu Hình
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
 
             {/* Server and Shift settings lists */}
             <div className="lg:col-span-2 space-y-6">
@@ -938,13 +1063,6 @@ export default function PayrollPage() {
                             </TableCell>
                           </TableRow>
                         ))}
-                        {payrollAllowances.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={4} className="text-center text-slate-500 py-8 text-xs">
-                              Chưa có ngày phụ cấp nào.
-                            </TableCell>
-                          </TableRow>
-                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -953,11 +1071,24 @@ export default function PayrollPage() {
 
               {/* Server base salaries table */}
               <Card className="bg-slate-900/40 border-slate-855 backdrop-blur-xl">
-                <CardHeader>
-                  <CardTitle className="text-base text-slate-200 flex items-center gap-2">
-                    <Server className="w-4 h-4 text-cyan-400" />
-                    Cấu Hình Lương Theo Server
-                  </CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="text-base text-slate-200 flex items-center gap-2">
+                      <Server className="w-4 h-4 text-cyan-400" />
+                      Cấu Hình Lương Theo Server
+                    </CardTitle>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setSelectedServerId('');
+                      setServerBaseSalaryInput('');
+                      setSettingsMessage(null);
+                      setIsServerSalaryDialogOpen(true);
+                    }}
+                    className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs h-7 px-2.5 rounded flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Thêm cấu hình
+                  </Button>
                 </CardHeader>
                 <CardContent className="p-0 sm:px-6 pb-6">
                   <div className="overflow-x-auto">
@@ -971,52 +1102,193 @@ export default function PayrollPage() {
                       </TableHeader>
                       <TableBody>
                         {servers
-                          .filter((server: any) => !server.name.includes('+'))
+                          .filter((server: any) => !server.name.includes('+') && server.base_salary > 0)
                           .map((server) => (
                             <TableRow key={server.id} className="border-slate-850">
                               <TableCell className="font-semibold text-slate-200">{server.name}</TableCell>
                             <TableCell className="text-right font-mono">
-                              {editingServerId === server.id ? (
-                                <Input
-                                  type="number"
-                                  value={serverBaseSalaryInput}
-                                  onChange={(e) => setServerBaseSalaryInput(e.target.value)}
-                                  className="w-32 bg-slate-950/60 border-slate-800 text-right text-xs font-mono h-8 ml-auto"
-                                />
-                              ) : (
-                                <span className="text-slate-200">{formatVND(server.base_salary)}</span>
-                              )}
+                              <span className="text-slate-200">{formatVND(server.base_salary)}</span>
                             </TableCell>
                             <TableCell className="text-right">
-                              {editingServerId === server.id ? (
-                                <div className="flex justify-end gap-1.5">
-                                  <Button
-                                    onClick={() => handleUpdateServerSalary(server.id)}
-                                    className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold h-7 px-2.5 rounded text-[11px]"
-                                  >
-                                    Lưu
-                                  </Button>
-                                  <Button
-                                    onClick={() => setEditingServerId(null)}
-                                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 h-7 px-2.5 rounded text-[11px]"
-                                  >
-                                    Hủy
-                                  </Button>
-                                </div>
-                              ) : (
+                              <div className="flex justify-end gap-1.5">
                                 <Button
+                                  type="button"
                                   onClick={() => {
-                                    setEditingServerId(server.id);
+                                    setSelectedServerId(server.id);
                                     setServerBaseSalaryInput(server.base_salary.toString());
+                                    setSettingsMessage(null);
+                                    setIsServerSalaryDialogOpen(true);
                                   }}
-                                  className="bg-slate-800 hover:bg-slate-750 text-[11px] h-7 px-3 text-slate-300"
+                                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 h-7 w-7 p-0 rounded flex items-center justify-center"
+                                  title="Sửa"
                                 >
-                                  Sửa
+                                  <Edit2 className="w-3.5 h-3.5" />
                                 </Button>
-                              )}
+                                <Button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (confirm(`Bạn có chắc chắn muốn xóa cấu hình lương của server ${server.name} không?`)) {
+                                      try {
+                                        const res = await apiFetch(`${API_URL}/servers/${server.id}`, {
+                                          method: 'PUT',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            base_salary: 0,
+                                            week_start_date: startDate,
+                                          }),
+                                        });
+                                        if (res.ok) {
+                                          fetchSettingsAndEntities();
+                                          fetchPayroll();
+                                        }
+                                      } catch (err) {
+                                        console.error('Failed to remove server salary:', err);
+                                      }
+                                    }
+                                  }}
+                                  className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-400 h-7 w-7 p-0 rounded flex items-center justify-center"
+                                  title="Xóa"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
+                        {servers.filter((server: any) => !server.name.includes('+') && server.base_salary > 0).length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={3} className="text-center text-slate-500 py-8 text-xs">
+                              Chưa cấu hình lương cho server nào.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Shift bonus configuration list */}
+              <Card className="bg-slate-900/40 border-slate-855 backdrop-blur-xl">
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="text-base text-slate-200 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-cyan-400" />
+                      Danh Sách Thưởng Ca Đang Cấu Hình
+                    </CardTitle>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setSelectedShiftId('');
+                      setShiftBonusSalaryInput('');
+                      setSelectedShiftBonusDays(['2', '3', '4', '5', '6', '7', 'CN']);
+                      setSettingsMessage(null);
+                      setIsShiftBonusDialogOpen(true);
+                    }}
+                    className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs h-7 px-2.5 rounded flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Thêm cấu hình
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0 sm:px-6 pb-6">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="border-slate-850">
+                        <TableRow className="border-slate-850 hover:bg-transparent">
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase">SERVER</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase">CA LÀM VIỆC</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">MỨC THƯỞNG</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-center">NGÀY ÁP DỤNG</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {shifts
+                          .filter((shift: any) => shift.bonus_salary > 0)
+                          .map((shift) => (
+                            <TableRow key={shift.id} className="border-slate-850">
+                              <TableCell className="font-semibold text-slate-200">
+                                {shift.server?.name || 'N/A'}
+                                {shift.name && <span className="text-slate-400 font-normal ml-1">({shift.name})</span>}
+                              </TableCell>
+                              <TableCell className="font-mono text-slate-200 text-xs">
+                                {shift.start_time}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-slate-200">
+                                {formatVND(shift.bonus_salary)}
+                              </TableCell>
+                              <TableCell className="text-center text-xs text-slate-300">
+                                {shift.bonus_days ? (
+                                  <div className="flex flex-wrap gap-1 justify-center">
+                                    {shift.bonus_days.split(',').map((day: string) => (
+                                      <Badge key={day} className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[9px] py-0 px-1">
+                                        {day === 'CN' ? 'CN' : `T${day}`}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-slate-500">Cả tuần</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <Button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedShiftId(shift.id);
+                                      setShiftBonusSalaryInput(shift.bonus_salary ? String(shift.bonus_salary) : '');
+                                      if (shift.bonus_days) {
+                                        setSelectedShiftBonusDays(shift.bonus_days.split(','));
+                                      } else {
+                                        setSelectedShiftBonusDays(['2', '3', '4', '5', '6', '7', 'CN']);
+                                      }
+                                      setSettingsMessage(null);
+                                      setIsShiftBonusDialogOpen(true);
+                                    }}
+                                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 h-7 w-7 p-0 rounded flex items-center justify-center"
+                                    title="Sửa"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (confirm('Bạn có chắc chắn muốn xóa cấu hình thưởng của ca này không?')) {
+                                        try {
+                                          const res = await apiFetch(`${API_URL}/shifts/${shift.id}`, {
+                                            method: 'PUT',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              base_salary: shift.base_salary,
+                                              bonus_salary: 0,
+                                              bonus_days: null,
+                                            }),
+                                          });
+                                          if (res.ok) {
+                                            fetchSettingsAndEntities();
+                                            fetchPayroll();
+                                          }
+                                        } catch (err) {
+                                          console.error('Failed to remove shift reward:', err);
+                                        }
+                                      }
+                                    }}
+                                    className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-400 h-7 w-7 p-0 rounded flex items-center justify-center"
+                                    title="Xóa"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        {shifts.filter((shift: any) => shift.bonus_salary > 0).length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-slate-500 py-8 text-xs">
+                              Chưa cấu hình thưởng cho ca nào trong tuần này.
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -1212,6 +1484,204 @@ export default function PayrollPage() {
               Xác Nhận Mở
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Shift Bonus Configuration Dialog */}
+      <Dialog open={isShiftBonusDialogOpen} onOpenChange={(open) => setIsShiftBonusDialogOpen(open)}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-slate-50 max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-cyan-400">
+              <Sparkles className="w-5 h-5 text-cyan-400" />
+              Cấu Hướng Thưởng Theo Ca
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-xs mt-2 text-sans">
+              Chọn ca của tuần và cài đặt mức thưởng kèm ngày áp dụng.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveShiftBonus} className="space-y-4 text-sm pt-2">
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">CHỌN CA LÀM VIỆC</label>
+              <Select
+                options={shiftOptions}
+                value={shiftOptions.find(o => o.value === selectedShiftId) || null}
+                onChange={(val: any) => handleShiftSelect(val ? val.value : '')}
+                placeholder="-- Chọn ca làm --"
+                isSearchable
+                styles={reactSelectStyles}
+                formatOptionLabel={({ serverName, name, startTime }: any) => (
+                  <div className="flex justify-between items-center w-full text-xs">
+                    <span className="text-slate-200">
+                      <strong className="font-bold text-slate-100">{serverName}</strong>
+                      <span className="text-slate-400 ml-2 font-mono">({startTime})</span>
+                    </span>
+                    {name && (
+                      <span className="text-[10px] bg-slate-850 border border-slate-800 text-cyan-400 px-1.5 py-0.5 rounded font-medium ml-2">
+                        {name}
+                      </span>
+                    )}
+                  </div>
+                )}
+              />
+            </div>
+            
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">MỨC TIỀN THƯỞNG (VND)</label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={shiftBonusSalaryInput ? new Intl.NumberFormat('vi-VN').format(Number(shiftBonusSalaryInput)) : ''}
+                onChange={(e) => {
+                  const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
+                  setShiftBonusSalaryInput(isNaN(raw) ? '' : String(raw));
+                }}
+                required
+                placeholder="VD: 50.000"
+                className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] text-slate-400 font-mono uppercase">Ngày áp dụng</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allDays = ['2', '3', '4', '5', '6', '7', 'CN'];
+                    if (selectedShiftBonusDays.length === allDays.length) {
+                      setSelectedShiftBonusDays([]);
+                    } else {
+                      setSelectedShiftBonusDays(allDays);
+                    }
+                  }}
+                  className="text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors font-mono"
+                >
+                  {selectedShiftBonusDays.length === 7 ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2 bg-slate-950/20 border border-slate-800/60 p-2.5 rounded-lg">
+                {['2', '3', '4', '5', '6', '7', 'CN'].map((day) => {
+                  const isChecked = selectedShiftBonusDays.includes(day);
+                  return (
+                    <label key={day} className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-slate-100 font-sans">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          if (isChecked) {
+                            setSelectedShiftBonusDays(selectedShiftBonusDays.filter(d => d !== day));
+                          } else {
+                            setSelectedShiftBonusDays([...selectedShiftBonusDays, day]);
+                          }
+                        }}
+                        className="w-3.5 h-3.5 rounded border-slate-800 bg-slate-950 text-cyan-500 focus:ring-cyan-500/20"
+                      />
+                      {day === 'CN' ? 'CN' : `T${day}`}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {settingsMessage && (
+              <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
+                ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                : 'bg-red-500/10 border-red-500/20 text-red-400'
+                }`}>
+                {settingsMessage.text}
+              </div>
+            )}
+
+            <DialogFooter className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setIsShiftBonusDialogOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
+              >
+                Hủy
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSavingShiftBonus || !selectedShiftId}
+                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs flex items-center gap-1.5"
+              >
+                {isSavingShiftBonus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Lưu
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Server Salary Configuration Dialog */}
+      <Dialog open={isServerSalaryDialogOpen} onOpenChange={(open) => setIsServerSalaryDialogOpen(open)}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-slate-50 max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-cyan-400">
+              <Server className="w-5 h-5 text-cyan-400" />
+              Cấu Hình Lương Theo Server
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-xs mt-2 text-sans">
+              Chọn server và cài đặt mức lương cơ bản trên mỗi ca làm việc.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveServerSalary} className="space-y-4 text-sm pt-2">
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">CHỌN SERVER</label>
+              <Select
+                options={serverSelectOptions}
+                value={serverSelectOptions.find(o => o.value === selectedServerId) || null}
+                onChange={(val: any) => setSelectedServerId(val ? val.value : '')}
+                placeholder="-- Chọn server --"
+                isSearchable
+                styles={reactSelectStyles}
+              />
+            </div>
+            
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">LƯƠNG CƠ BẢN / CA (VND)</label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={serverBaseSalaryInput ? new Intl.NumberFormat('vi-VN').format(Number(serverBaseSalaryInput)) : ''}
+                onChange={(e) => {
+                  const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
+                  setServerBaseSalaryInput(isNaN(raw) ? '' : String(raw));
+                }}
+                required
+                placeholder="VD: 100.000"
+                className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+              />
+            </div>
+
+            {settingsMessage && (
+              <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
+                ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                : 'bg-red-500/10 border-red-500/20 text-red-400'
+                }`}>
+                {settingsMessage.text}
+              </div>
+            )}
+
+            <DialogFooter className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => setIsServerSalaryDialogOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
+              >
+                Hủy
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSavingServerSalary || !selectedServerId}
+                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs flex items-center gap-1.5"
+              >
+                {isSavingServerSalary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Lưu
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

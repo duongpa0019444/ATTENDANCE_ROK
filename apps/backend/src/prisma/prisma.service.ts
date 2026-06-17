@@ -108,15 +108,28 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
 
   async isPeriodOverlappingLocked(start: Date | string, end: Date | string): Promise<boolean> {
     try {
-      const startDate = new Date(start);
-      const endDate = new Date(end);
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setHours(23, 59, 59, 999);
+      const getUtcDate = (d: Date | string) => {
+        const dateObj = new Date(d);
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).formatToParts(dateObj);
+        const year = Number(parts.find((part) => part.type === 'year')?.value);
+        const month = Number(parts.find((part) => part.type === 'month')?.value);
+        const day = Number(parts.find((part) => part.type === 'day')?.value);
+        return new Date(Date.UTC(year, month - 1, day));
+      };
+
+      const startDate = getUtcDate(start);
+      const endDate = getUtcDate(end);
+      endDate.setUTCHours(23, 59, 59, 999);
 
       const locked = await this.lockedPeriod.findFirst({
         where: {
-          start_date: { lte: endDate },
-          end_date: { gte: startDate },
+          start_date: { lt: endDate },
+          end_date: { gt: startDate },
         },
       });
       return !!locked;

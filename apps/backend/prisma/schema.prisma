@@ -50,14 +50,28 @@ model TelegramLinkToken {
 }
 
 model Server {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  status      String   @default("ACTIVE")
-  base_salary Float    @default(0)
-  created_at  DateTime @default(now())
-  shifts      Shift[]
+  id               String                @id @default(uuid())
+  name             String                @unique
+  status           String                @default("ACTIVE")
+  base_salary      Float                 @default(0)
+  created_at       DateTime              @default(now())
+  shifts           Shift[]
+  salary_histories ServerSalaryHistory[]
 
   @@map("servers")
+}
+
+model ServerSalaryHistory {
+  id          String   @id @default(uuid())
+  server_id   String
+  base_salary Float
+  start_date  DateTime @db.Date
+  created_at  DateTime @default(now())
+
+  server      Server   @relation(fields: [server_id], references: [id], onDelete: Cascade)
+
+  @@unique([server_id, start_date])
+  @@map("server_salary_histories")
 }
 
 model Shift {
@@ -69,6 +83,7 @@ model Shift {
   grace_minutes   Int               @default(5)
   base_salary     Float?
   bonus_salary    Float             @default(0)
+  bonus_days      String?
   created_at      DateTime          @default(now())
   
   week_start_date DateTime?         @db.Date

@@ -58,6 +58,7 @@ export class ShiftsService {
         grace_minutes: data.grace_minutes ? parseInt(data.grace_minutes) : 5,
         base_salary: data.base_salary !== undefined && data.base_salary !== null ? Number(data.base_salary) : null,
         bonus_salary: data.bonus_salary !== undefined && data.bonus_salary !== null ? Number(data.bonus_salary) : 0,
+        bonus_days: data.bonus_days !== undefined ? data.bonus_days : null,
         week_start_date: data.week_start_date ? new Date(data.week_start_date) : null,
       }
     });
@@ -184,6 +185,7 @@ export class ShiftsService {
         grace_minutes: data.grace_minutes ? parseInt(data.grace_minutes) : undefined,
         base_salary: data.base_salary !== undefined ? (data.base_salary !== null ? Number(data.base_salary) : null) : undefined,
         bonus_salary: data.bonus_salary !== undefined ? Number(data.bonus_salary) : undefined,
+        bonus_days: data.bonus_days !== undefined ? data.bonus_days : undefined,
       },
     });
   }
@@ -440,6 +442,7 @@ export class ShiftsService {
           grace_minutes: shift.grace_minutes,
           base_salary: shift.base_salary,
           bonus_salary: shift.bonus_salary,
+          bonus_days: shift.bonus_days,
           week_start_date: toWeek,
         },
       });

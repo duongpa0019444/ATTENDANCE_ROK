@@ -1,14 +1,32 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ServersService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll() {
-    return this.prisma.server.findMany({
+  async findAll(weekStartDate?: string) {
+    const servers = await this.prisma.server.findMany({
       orderBy: { name: 'asc' },
     });
+
+    if (weekStartDate) {
+      const parsedDate = new Date(`${weekStartDate}T00:00:00Z`);
+      for (const server of servers) {
+        const history = await this.prisma.serverSalaryHistory.findFirst({
+          where: {
+            server_id: server.id,
+            start_date: { lte: parsedDate },
+          },
+          orderBy: { start_date: 'desc' },
+        });
+        if (history) {
+          server.base_salary = history.base_salary;
+        }
+      }
+    }
+
+    return servers;
   }
 
   async create(data: { name: string; base_salary?: number }) {
@@ -20,14 +38,56 @@ export class ServersService {
     });
   }
 
-  async update(id: string, data: { name?: string; status?: string; base_salary?: number }) {
-    return this.prisma.server.update({
-      where: { id },
-      data: {
-        name: data.name,
-        status: data.status,
-        base_salary: data.base_salary !== undefined ? Number(data.base_salary) : undefined,
-      },
+  async update(id: string, data: { name?: string; status?: string; base_salary?: number; week_start_date?: string }) {
+    if (data.week_start_date) {
+      const start = new Date(`${data.week_start_date}T00:00:00Z`);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      if (await this.prisma.isPeriodOverlappingLocked(start, end)) {
+        throw new BadRequestException('Khoảng thời gian này đã được chốt bảng lương. Không thể cập nhật cấu hình thù lao.');
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const server = await tx.server.update({
+        where: { id },
+        data: {
+          name: data.name,
+          status: data.status,
+          base_salary: data.base_salary !== undefined ? Number(data.base_salary) : undefined,
+        },
+      });
+
+      if (data.week_start_date && data.base_salary !== undefined) {
+        const parsedDate = new Date(`${data.week_start_date}T00:00:00Z`);
+        const baseSalary = Number(data.base_salary);
+
+        const existing = await tx.serverSalaryHistory.findUnique({
+          where: {
+            server_id_start_date: {
+              server_id: id,
+              start_date: parsedDate,
+            },
+          },
+        });
+
+        if (existing) {
+          await tx.serverSalaryHistory.update({
+            where: { id: existing.id },
+            data: { base_salary: baseSalary },
+          });
+        } else {
+          await tx.serverSalaryHistory.create({
+            data: {
+              server_id: id,
+              start_date: parsedDate,
+              base_salary: baseSalary,
+            },
+          });
+        }
+      }
+
+      return server;
     });
   }
 

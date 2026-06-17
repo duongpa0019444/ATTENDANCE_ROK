@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Delete, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Delete, Param, UseGuards, Query } from '@nestjs/common';
 import { ServersService } from './servers.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -11,8 +11,8 @@ export class ServersController {
   constructor(private readonly serversService: ServersService) {}
 
   @Get()
-  findAll() {
-    return this.serversService.findAll();
+  findAll(@Query('week_start_date') weekStartDate?: string) {
+    return this.serversService.findAll(weekStartDate);
   }
 
   @Roles(Role.ADMIN, Role.MANAGER)
@@ -23,7 +23,10 @@ export class ServersController {
 
   @Roles(Role.ADMIN, Role.MANAGER)
   @Put(':id')
-  update(@Param('id') id: string, @Body() data: { name?: string; status?: string; base_salary?: number }) {
+  update(
+    @Param('id') id: string,
+    @Body() data: { name?: string; status?: string; base_salary?: number; week_start_date?: string }
+  ) {
     return this.serversService.update(id, data);
   }
 

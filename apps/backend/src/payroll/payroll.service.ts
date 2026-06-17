@@ -164,6 +164,13 @@ export class PayrollService {
     const startBoundary = `${startDateStr}T07:00:00`;
     const endBoundary = `${endDateStr}T06:59:59`;
 
+    const salaryHistories = await this.prisma.serverSalaryHistory.findMany({
+      where: {
+        start_date: { lte: endDate },
+      },
+      orderBy: { start_date: 'desc' },
+    });
+
     for (const assignment of assignments) {
       if (isRangeFilter) {
         const assignmentTimeStr = `${this.formatDateOnly(assignment.work_date)}T${assignment.shift.start_time || '00:00'}:00`;
@@ -217,7 +224,11 @@ export class PayrollService {
 
         // 1. Base Salary
         const shiftBase = assignment.shift.base_salary;
-        const serverBase = assignment.shift.server?.base_salary;
+        const histBase = salaryHistories.find(
+          (h) => h.server_id === assignment.shift.server_id && h.start_date.getTime() <= assignment.work_date.getTime()
+        )?.base_salary;
+        const serverBase = histBase !== undefined ? histBase : assignment.shift.server?.base_salary;
+
         baseSalary = shiftBase !== null && shiftBase !== undefined
           ? shiftBase
           : (serverBase !== null && serverBase !== undefined && serverBase > 0 ? serverBase : defaultSalary);
@@ -268,7 +279,33 @@ export class PayrollService {
 
         // 4. Date-specific allowance
         appliedOtherAllowance = allowanceByDate.get(this.formatDateOnly(assignment.work_date)) || 0;
-        shiftReward = assignment.shift.bonus_salary || 0;
+        
+        shiftReward = 0;
+        if (assignment.shift.bonus_salary > 0) {
+          const bonusDays = (assignment.shift as any).bonus_days;
+          if (bonusDays) {
+            const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
+              timeZone: 'Asia/Ho_Chi_Minh',
+              weekday: 'short',
+            });
+            const weekdayStr = weekdayFormatter.format(assignment.work_date);
+            const dayMap: Record<string, string> = {
+              'Sun': 'CN',
+              'Mon': '2',
+              'Tue': '3',
+              'Wed': '4',
+              'Thu': '5',
+              'Fri': '6',
+              'Sat': '7'
+            };
+            const dayStr = dayMap[weekdayStr];
+            if (bonusDays.split(',').includes(dayStr)) {
+              shiftReward = assignment.shift.bonus_salary;
+            }
+          } else {
+            shiftReward = assignment.shift.bonus_salary;
+          }
+        }
 
         // 5. Total Shift Salary
         totalSalary = baseSalary + nightBonus + weekendBonus + appliedOtherAllowance + shiftReward;
