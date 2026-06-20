@@ -104,11 +104,32 @@ export class PayrollService {
             totalWeekendBonus,
             totalOtherAllowance,
             totalShiftReward,
-            totalSalary,
+            adjustmentPercent: (p as any).adjustment_percent || 0,
+            totalAdjustment: (p as any).total_adjustment || 0,
+            totalSalary: p.total_salary,
             details,
           };
         });
       }
+    }
+
+    const startDbDate = this.parseDateOnly(startDateStr);
+    const endDbDate = this.parseDateOnly(endDateStr);
+
+    const adjustments = await this.prisma.payrollAdjustment.findMany({
+      where: {
+        start_date: startDbDate,
+        end_date: endDbDate,
+        ...(userId ? { user_id: userId } : {}),
+      },
+    });
+
+    const adjustmentMap = new Map<string, { percent: number; note: string }>();
+    for (const adj of adjustments) {
+      adjustmentMap.set(adj.user_id, {
+        percent: adj.adjustment_percent,
+        note: adj.note || '',
+      });
     }
 
     // Fetch system-wide configurations
@@ -238,12 +259,12 @@ export class PayrollService {
         const [sh, sm] = startTime.split(':').map(Number);
         const startHours = sh + sm / 60;
 
-        // Check if starts in [22:00, 03:00] (meaning >= 22 or <= 3)
-        if (startHours >= 22 || startHours <= 3) {
+        // Check if starts in [22:00, 03:00) (meaning >= 22 or < 3)
+        if (startHours >= 22 || startHours < 3) {
           nightBonus = bonusNight22_3;
         }
-        // Check if starts in (03:00, 07:00] (meaning > 3 and <= 7)
-        else if (startHours > 3 && startHours <= 7) {
+        // Check if starts in [03:00, 07:00) (meaning >= 3 and < 7)
+        else if (startHours >= 3 && startHours < 7) {
           nightBonus = bonusNight3_7;
         }
 
@@ -338,7 +359,18 @@ export class PayrollService {
       });
     }
 
-    return Array.from(userPayrollMap.values());
+    const result = Array.from(userPayrollMap.values());
+    for (const payroll of result) {
+      const adj = adjustmentMap.get(payroll.userId) || { percent: 0, note: '' };
+      payroll.adjustmentPercent = adj.percent;
+      const grossSalary = payroll.totalSalary;
+      const totalAdjustment = Math.round(grossSalary * (adj.percent / 100));
+      payroll.totalAdjustment = totalAdjustment;
+      payroll.totalSalary = grossSalary + totalAdjustment;
+      payroll.adjustmentNote = adj.note;
+    }
+
+    return result;
   }
 
   async getSettings() {
@@ -516,6 +548,8 @@ export class PayrollService {
             total_weekend_bonus: record.totalWeekendBonus,
             total_other_allowance: record.totalOtherAllowance,
             total_shift_reward: record.totalShiftReward,
+            adjustment_percent: record.adjustmentPercent || 0,
+            total_adjustment: record.totalAdjustment || 0,
             total_salary: record.totalSalary,
             details: record.details,
           },
@@ -546,5 +580,48 @@ export class PayrollService {
     });
 
     return { success: true };
+  }
+
+  async upsertAdjustment(body: {
+    userId: string;
+    startDate: string;
+    endDate: string;
+    adjustmentPercent: number;
+    note?: string;
+  }) {
+    const start = this.parseDateOnly(body.startDate);
+    const end = this.parseDateOnly(body.endDate);
+
+    const locked = await this.prisma.lockedPeriod.findFirst({
+      where: {
+        start_date: { lte: start },
+        end_date: { gte: end },
+      },
+    });
+
+    if (locked) {
+      throw new BadRequestException('Giai đoạn này đã chốt bảng lương. Không thể điều chỉnh.');
+    }
+
+    return this.prisma.payrollAdjustment.upsert({
+      where: {
+        user_id_start_date_end_date: {
+          user_id: body.userId,
+          start_date: start,
+          end_date: end,
+        },
+      },
+      update: {
+        adjustment_percent: Number(body.adjustmentPercent) || 0,
+        note: body.note || null,
+      },
+      create: {
+        user_id: body.userId,
+        start_date: start,
+        end_date: end,
+        adjustment_percent: Number(body.adjustmentPercent) || 0,
+        note: body.note || null,
+      },
+    });
   }
 }

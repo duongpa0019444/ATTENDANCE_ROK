@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Clock,
   DollarSign,
+  Gift,
   HelpCircle,
   Info,
   Laptop,
@@ -20,6 +21,7 @@ import {
   Server,
   Settings,
   Smartphone,
+  Sparkles,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -61,15 +63,49 @@ const adminSteps = [
     icon: DollarSign,
     title: '4. Kiểm tra và cấu hình bảng lương',
     items: [
-      'Trang Bảng Lương cho chọn khoảng ngày, xem tổng chi trả, số ca hoàn thành và lương trung bình.',
-      'Nút Chi Tiết mở bảng lương từng ca của một nhân viên trong khoảng ngày đã chọn.',
-      'Nút Xuất Báo Cáo tải file CSV tổng hợp bảng lương.',
-      'Tab Cấu Hình Thù Lao dùng để đặt lương ca mặc định, các loại phụ cấp đêm và phụ cấp cuối tuần.',
-      'Lương ca có thể cấu hình riêng cho từng server hoạt động chính thức (các ca gộp server tự động đã được lọc bỏ để tránh nhầm lẫn).',
-      'Trạng thái ĐÃ CHỐT/CHƯA CHỐT nằm cạnh tiêu đề CYBER_PAYROLL, dựa trên khoảng ngày đang chọn.',
-      'Bấm Chốt bảng lương để đóng băng dữ liệu lương của khoảng ngày hiện tại theo lịch phân ca, điểm danh và cấu hình thù lao tại thời điểm chốt.',
-      'Sau khi chốt, bảng lương trong khoảng đó sẽ đọc từ bản snapshot cố định; các thay đổi sau này về phân ca, điểm danh hoặc cấu hình thù lao sẽ không làm đổi số lương đã chốt.',
-      'Khi cần điều chỉnh lại dữ liệu, bấm Hủy chốt để mở khóa khoảng ngày. Bảng lương sẽ quay lại tính toán động và các thay đổi mới sẽ có hiệu lực.',
+      'Trang Bảng Lương hiển thị tổng hợp theo chu kỳ tuần (từ 07h00 Thứ 2 đến 06h59 Thứ 2 tuần sau).',
+      'Nút Chi Tiết mở bảng thống kê lương và phụ cấp từng ca làm của nhân viên trong khoảng ngày.',
+      'Nút Điều Chỉnh cho phép thiết lập tỷ lệ phần trăm thưởng phạt cách nhau mỗi 5% (từ -100% đến +100%) kèm ghi chú. Thực nhận tính theo công thức: Lương thực nhận = Lương gộp * (1 + Tỷ lệ điều chỉnh / 100).',
+      'Tab Cấu Hình Thù Lao dùng để đặt lương ca mặc định, các loại phụ cấp đêm, phụ cấp cuối tuần và lương cơ bản cho từng server.',
+      'Phụ cấp ca đêm (22h - 3h) áp dụng cho ca bắt đầu từ 22h00 đến 2h59. Phụ cấp ca đêm (3h - 7h) áp dụng cho ca bắt đầu từ 3h00 đến 6h59.',
+      'Phụ cấp cuối tuần áp dụng cho các ca bắt đầu trong khoảng từ 07h00 sáng Thứ Bảy đến 06h59 sáng Thứ Hai tuần sau.',
+      'Trạng thái ĐÃ CHỐT/CHƯA CHỐT nằm cạnh tiêu đề CYBER_PAYROLL. Bấm Chốt bảng lương để đóng băng dữ liệu Snapshot của kỳ lương hiện tại.',
+      'Khi chốt bảng lương, các thiết lập điều chỉnh % và ghi chú cũng được đóng băng cố định để phục vụ thanh toán.',
+      'Khi cần điều chỉnh lại dữ liệu lịch trực hay cấu hình, bấm Hủy chốt để mở khóa khoảng ngày kỳ lương.',
+    ],
+  },
+  {
+    icon: Calendar,
+    title: '5. Phụ Cấp Theo Ngày',
+    items: [
+      'Trong tab Cấu Hình Thù Lao, mục Phụ Cấp Theo Ngày cho phép thiết lập một khoản phụ cấp cố định áp dụng cho tất cả nhân viên có ca làm vào một ngày cụ thể.',
+      'Nhập ngày, số tiền phụ cấp và ghi chú (ví dụ: Tết, lễ 30/4...) rồi bấm Lưu.',
+      'Chỉ nhân viên được phân ca vào đúng ngày đã thiết lập mới được cộng thêm khoản phụ cấp này vào lương.',
+      'Có thể xóa phụ cấp theo ngày bất kỳ lúc nào bằng nút Xóa trong danh sách.',
+    ],
+  },
+  {
+    icon: Server,
+    title: '6. Cấu Hình Lương Theo Server',
+    items: [
+      'Mục Cấu Hình Lương Theo Server cho phép thiết lập mức lương cơ bản riêng cho từng server game.',
+      'Bấm Thêm cấu hình, chọn server từ dropdown tìm kiếm và nhập mức lương cơ bản trên mỗi ca làm việc.',
+      'Nếu server có cấu hình lương riêng, hệ thống sẽ ưu tiên dùng mức lương này thay vì mức lương mặc định trong Cấu Hình Thù Lao Chung.',
+      'Thứ tự ưu tiên lương: Lương riêng của ca (nếu có) > Lương riêng của server > Lương cơ bản mặc định.',
+      'Các server gộp (có dấu +) sẽ tự động được lọc bỏ khỏi danh sách chọn để tránh nhầm lẫn.',
+      'Có thể sửa hoặc xóa cấu hình lương server bất kỳ lúc nào bằng nút Sửa/Xóa trong bảng danh sách.',
+    ],
+  },
+  {
+    icon: Sparkles,
+    title: '7. Cấu Hình Thưởng Ca',
+    items: [
+      'Mục Danh Sách Thưởng Ca cho phép thiết lập mức tiền thưởng bổ sung cho từng ca làm việc cụ thể.',
+      'Bấm Thêm cấu hình, chọn ca làm từ dropdown tìm kiếm (hiển thị tên Server, giờ bắt đầu và tên ca).',
+      'Nhập mức tiền thưởng (VND) và chọn các ngày trong tuần mà thưởng được áp dụng (T2 - CN). Mặc định thưởng áp dụng cả tuần.',
+      'Ví dụ: có thể cấu hình thưởng chỉ áp dụng cho ca cuối tuần (T7, CN) hoặc bất kỳ tổ hợp ngày nào.',
+      'Tiền thưởng ca sẽ được cộng thêm vào tổng lương của nhân viên khi làm ca đó vào đúng ngày đã cấu hình.',
+      'Có thể sửa hoặc xóa cấu hình thưởng ca bằng nút Sửa/Xóa trong bảng danh sách.',
     ],
   },
 ];
@@ -129,7 +165,7 @@ const faqItems = [
     label: 'Bảng lương',
     question: 'Nhân viên làm hôm nay nhưng chưa thấy tính lương?',
     answer:
-      'Hệ thống chỉ tính lương cho ca có ngày làm nhỏ hơn ngày hiện tại. Ca làm trong ngày hôm nay sẽ được đưa vào bảng lương từ ngày hôm sau.',
+      'Hệ thống tính lương cho tất cả các ca đã được phân công nhân sự trong chu kỳ tuần được chọn (từ 07h00 Thứ 2 đến 06h59 Thứ 2 tuần sau). Hãy kiểm tra xem ca đó đã được phân công nhân sự và nằm đúng chu kỳ tuần đang lọc hay chưa.',
   },
   {
     label: 'Chốt lương',
@@ -345,8 +381,7 @@ export default function GuidePage() {
               <CardContent className="p-4 text-sm text-slate-400 flex items-start gap-2">
                 <Clock className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
                 <span>
-                  Lưu ý quan trọng về bảng lương: hệ thống tính lương cho ca đã qua ngày làm. Vì vậy ca hôm nay
-                  sẽ hiện trong bảng lương từ ngày hôm sau.
+                  Lưu ý quan trọng về bảng lương: Hệ thống tự động tính thù lao cho tất cả các ca đã được phân công nhân sự trong chu kỳ tuần được chọn.
                 </span>
               </CardContent>
             </Card>

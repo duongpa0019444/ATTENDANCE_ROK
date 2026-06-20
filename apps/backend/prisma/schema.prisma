@@ -34,6 +34,7 @@ model User {
   attendance_logs    AttendanceLog[]
   notifications      Notification[]
   audit_logs         AuditLog[]
+  payroll_adjustments PayrollAdjustment[]
 
   @@map("users")
 }
@@ -193,6 +194,8 @@ model LockedPayroll {
   total_weekend_bonus  Float
   total_other_allowance Float @default(0)
   total_shift_reward   Float
+  adjustment_percent   Float @default(0)
+  total_adjustment     Float @default(0)
   total_salary        Float
   details             Json
 
@@ -210,4 +213,19 @@ model PayrollAllowance {
   created_at DateTime @default(now())
 
   @@map("payroll_allowances")
+}
+
+model PayrollAdjustment {
+  id                 String   @id @default(uuid())
+  user_id            String
+  start_date         DateTime @db.Date
+  end_date           DateTime @db.Date
+  adjustment_percent Float    @default(0)
+  note               String?
+  created_at         DateTime @default(now())
+
+  user               User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, start_date, end_date])
+  @@map("payroll_adjustments")
 }

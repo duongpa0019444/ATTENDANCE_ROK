@@ -82,6 +82,9 @@ interface PayrollRecord {
   totalShiftReward: number;
   totalSalary: number;
   details: PayrollDetail[];
+  adjustmentPercent?: number;
+  totalAdjustment?: number;
+  adjustmentNote?: string;
 }
 
 interface PayrollAllowance {
@@ -96,12 +99,24 @@ const reactSelectStyles = {
     ...base,
     backgroundColor: 'rgba(15, 23, 42, 0.4)',
     borderColor: state.isFocused ? '#22d3ee' : '#1e293b',
-    color: 'white',
     minHeight: '34px',
     borderRadius: '6px',
     fontSize: '12px',
     boxShadow: state.isFocused ? '0 0 0 1px rgba(34, 211, 238, 0.5)' : 'none',
     '&:hover': { borderColor: state.isFocused ? '#22d3ee' : '#334155' }
+  }),
+  valueContainer: (base: any) => ({
+    ...base,
+    paddingLeft: '12px',
+    paddingRight: '12px',
+    overflow: 'visible',
+  }),
+  input: (base: any) => ({
+    ...base,
+    color: 'white',
+    margin: '0px',
+    padding: '0px',
+    paddingLeft: '4px',
   }),
   menu: (base: any) => ({
     ...base,
@@ -118,8 +133,18 @@ const reactSelectStyles = {
     cursor: 'pointer',
     '&:active': { backgroundColor: '#0e7490' }
   }),
-  singleValue: (base: any) => ({ ...base, color: 'white' }),
-  placeholder: (base: any) => ({ ...base, color: '#64748b' })
+  singleValue: (base: any) => ({
+    ...base,
+    color: 'white',
+    overflow: 'visible',
+    paddingLeft: '4px',
+  }),
+  placeholder: (base: any) => ({
+    ...base,
+    color: '#64748b',
+    overflow: 'visible',
+    paddingLeft: '4px',
+  })
 };
 
 export default function PayrollPage() {
@@ -160,6 +185,14 @@ export default function PayrollPage() {
   const [isServerSalaryDialogOpen, setIsServerSalaryDialogOpen] = useState<boolean>(false);
   const [selectedServerId, setSelectedServerId] = useState<string>('');
   const [isSavingServerSalary, setIsSavingServerSalary] = useState<boolean>(false);
+
+  // States for Thong/Phat % adjustment
+  const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState<boolean>(false);
+  const [adjustingStaff, setAdjustingStaff] = useState<PayrollRecord | null>(null);
+  const [adjustmentPercentInput, setAdjustmentPercentInput] = useState<string>('');
+  const [adjustmentNoteInput, setAdjustmentNoteInput] = useState<string>('');
+  const [isSavingAdjustment, setIsSavingAdjustment] = useState<boolean>(false);
+  const [adjustmentMessage, setAdjustmentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [isCheckingLock, setIsCheckingLock] = useState<boolean>(false);
@@ -528,13 +561,54 @@ export default function PayrollPage() {
     }
   };
 
+  const handleSaveAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustingStaff) return;
+    setIsSavingAdjustment(true);
+    try {
+      const res = await apiFetch(`${API_URL}/payroll/adjustments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: adjustingStaff.userId,
+          startDate,
+          endDate,
+          adjustmentPercent: parseFloat(adjustmentPercentInput) || 0,
+          note: adjustmentNoteInput.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setIsAdjustmentDialogOpen(false);
+        setAdjustingStaff(null);
+        setAdjustmentPercentInput('');
+        setAdjustmentNoteInput('');
+        setAdjustmentMessage(null);
+        fetchPayroll();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setAdjustmentMessage({
+          type: 'error',
+          text: errData.message || 'Không thể lưu điều chỉnh lương.'
+        });
+      }
+    } catch (err) {
+      console.error('Failed to save adjustment:', err);
+      setAdjustmentMessage({
+        type: 'error',
+        text: 'Lỗi kết nối. Không thể lưu cấu hình.'
+      });
+    } finally {
+      setIsSavingAdjustment(false);
+    }
+  };
+
   const exportToCSV = () => {
     // UTF-8 BOM to make sure Excel handles Vietnamese characters correctly
     let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-    csvContent += 'Nhân Viên,Vai Trò,Tổng Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Phụ Cấp Khác,Thưởng Ca,Thực Nhận (VND)\n';
+    csvContent += 'Nhân Viên,Vai Trò,Tổng Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Phụ Cấp Khác,Thưởng Ca,Điều Chỉnh (%),Tiền Điều Chỉnh,Thực Nhận (VND)\n';
 
     payrollData.forEach((row) => {
-      csvContent += `"${row.fullName}","${row.role}",${row.completedShifts},${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.totalOtherAllowance},${row.totalShiftReward},${row.totalSalary}\n`;
+      csvContent += `"${row.fullName}","${row.role}",${row.completedShifts},${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.totalOtherAllowance},${row.totalShiftReward},${row.adjustmentPercent || 0},${row.totalAdjustment || 0},${row.totalSalary}\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -556,6 +630,14 @@ export default function PayrollPage() {
   const totalPayrollCost = payrollData.reduce((acc, curr) => acc + curr.totalSalary, 0);
   const totalCompletedShifts = payrollData.reduce((acc, curr) => acc + curr.completedShifts, 0);
   const averageShiftSalary = totalCompletedShifts > 0 ? totalPayrollCost / totalCompletedShifts : 0;
+
+  const adjustmentPercentOptions = [];
+  for (let i = -100; i <= 100; i += 5) {
+    adjustmentPercentOptions.push({
+      value: i,
+      label: i > 0 ? `+${i}%` : `${i}%`,
+    });
+  }
 
   const shiftOptions = shifts.map((shift) => ({
     value: shift.id,
@@ -814,6 +896,7 @@ export default function PayrollPage() {
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CUỐI TUẦN</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">THƯỞNG CA</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP KHÁC</TableHead>
+                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐIỀU CHỈNH (%)</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right font-bold text-cyan-400">THỰC NHẬN</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
                       </TableRow>
@@ -847,14 +930,39 @@ export default function PayrollPage() {
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalWeekendBonus)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalShiftReward)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalOtherAllowance)}</TableCell>
+                          <TableCell className="text-right font-mono text-slate-200">
+                            <span className={staff.adjustmentPercent && staff.adjustmentPercent !== 0 ? (staff.adjustmentPercent > 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold') : 'text-slate-400'}>
+                              {staff.adjustmentPercent && staff.adjustmentPercent > 0 ? `+${staff.adjustmentPercent}%` : staff.adjustmentPercent && staff.adjustmentPercent < 0 ? `${staff.adjustmentPercent}%` : '0%'}
+                            </span>
+                            {staff.totalAdjustment && staff.totalAdjustment !== 0 ? (
+                              <span className={`text-[10px] block ${staff.totalAdjustment > 0 ? 'text-emerald-400/80' : 'text-red-400/80'}`}>
+                                {staff.totalAdjustment > 0 ? '+' : ''}{formatVND(staff.totalAdjustment)}
+                              </span>
+                            ) : null}
+                          </TableCell>
                           <TableCell className="text-right font-mono font-bold text-emerald-400">{formatVND(staff.totalSalary)}</TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              onClick={() => setSelectedStaff(staff)}
-                              className="bg-slate-800 hover:bg-slate-750 text-xs text-slate-200 hover:text-white h-7 px-3 rounded"
-                            >
-                              Chi Tiết
-                            </Button>
+                            <div className="flex justify-end gap-1.5">
+                              <Button
+                                onClick={() => setSelectedStaff(staff)}
+                                className="bg-slate-800 hover:bg-slate-750 text-[11px] text-slate-200 hover:text-white h-7 px-2.5 rounded"
+                              >
+                                Chi Tiết
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  setAdjustingStaff(staff);
+                                  setAdjustmentPercentInput(staff.adjustmentPercent ? String(staff.adjustmentPercent) : '0');
+                                  setAdjustmentNoteInput(staff.adjustmentNote || '');
+                                  setAdjustmentMessage(null);
+                                  setIsAdjustmentDialogOpen(true);
+                                }}
+                                disabled={isLocked}
+                                className="bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 disabled:opacity-50 disabled:pointer-events-none text-[11px] h-7 px-2.5 rounded"
+                              >
+                                Điều Chỉnh
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -911,7 +1019,7 @@ export default function PayrollPage() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (SAU 3H - 7H)</label>
+                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (3H - 7H)</label>
                       <Input
                         type="text"
                         inputMode="numeric"
@@ -1302,6 +1410,77 @@ export default function PayrollPage() {
 
       </div>
 
+      {/* Adjustment Dialog */}
+      <Dialog open={isAdjustmentDialogOpen} onOpenChange={(open) => setIsAdjustmentDialogOpen(open)}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-slate-50 max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-cyan-400">
+              <Sparkles className="w-5 h-5 text-cyan-400" />
+              Điều Chỉnh Lương - {adjustingStaff?.fullName}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-xs mt-2 text-sans">
+              Áp dụng phần trăm thưởng hoặc phạt cho tuần lương từ {formatDateVi(startDate)} đến {formatDateVi(endDate)}.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveAdjustment} className="space-y-4 text-sm pt-2">
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">TỶ LỆ ĐIỀU CHỈNH (%)</label>
+              <Select
+                options={adjustmentPercentOptions}
+                value={adjustmentPercentOptions.find(o => o.value === parseFloat(adjustmentPercentInput)) || null}
+                onChange={(val: any) => setAdjustmentPercentInput(val ? String(val.value) : '0')}
+                placeholder="-- Chọn tỷ lệ --"
+                isSearchable
+                styles={reactSelectStyles}
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                * Chọn tỷ lệ dương (ví dụ: +10%) để thưởng thêm. Chọn tỷ lệ âm (ví dụ: -5%) để phạt giảm.
+              </p>
+            </div>
+            
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">GHI CHÚ ĐIỀU CHỈNH</label>
+              <Input
+                value={adjustmentNoteInput}
+                onChange={(e) => setAdjustmentNoteInput(e.target.value)}
+                placeholder="VD: Thưởng hiệu suất, Phạt đi muộn nhiều..."
+                className="bg-slate-950/40 border-slate-800 text-slate-100 text-xs focus-visible:ring-cyan-500/20"
+              />
+            </div>
+
+            {adjustmentMessage && (
+              <div className={`p-2 rounded text-xs border ${adjustmentMessage.type === 'success'
+                ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                : 'bg-red-500/10 border-red-500/20 text-red-400'
+                }`}>
+                {adjustmentMessage.text}
+              </div>
+            )}
+
+            <DialogFooter className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  setIsAdjustmentDialogOpen(false);
+                  setAdjustingStaff(null);
+                }}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
+              >
+                Hủy
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSavingAdjustment}
+                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs flex items-center gap-1.5"
+              >
+                {isSavingAdjustment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Lưu
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Drill-down Detail Modal */}
       <Dialog open={selectedStaff !== null} onOpenChange={() => setSelectedStaff(null)}>
         <DialogContent className="bg-slate-900 border-slate-800 text-slate-50 sm:max-w-5xl w-[95vw] max-h-[85vh] overflow-y-auto p-4 sm:p-6">
@@ -1318,7 +1497,7 @@ export default function PayrollPage() {
           <div className="space-y-4 pt-2">
 
             {/* Staff Mini Stat block */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 bg-slate-950/40 border border-slate-800 rounded-lg text-xs leading-relaxed">
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 p-3 bg-slate-950/40 border border-slate-800 rounded-lg text-xs leading-relaxed">
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Số Ca Hoàn Thành</span>
                 <strong className="text-sm sm:text-base text-cyan-400">{selectedStaff?.completedShifts} / {selectedStaff?.totalShifts}</strong>
@@ -1332,10 +1511,24 @@ export default function PayrollPage() {
                 <strong className="text-sm sm:text-base text-indigo-400">{selectedStaff ? formatVND(selectedStaff.totalOtherAllowance) : '0đ'}</strong>
               </div>
               <div>
+                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Điều chỉnh %</span>
+                <strong className={`text-sm sm:text-base ${selectedStaff?.totalAdjustment && selectedStaff.totalAdjustment > 0 ? 'text-emerald-400' : selectedStaff?.totalAdjustment && selectedStaff.totalAdjustment < 0 ? 'text-red-400' : 'text-slate-400'}`}>
+                  {selectedStaff?.adjustmentPercent ? `${selectedStaff.adjustmentPercent > 0 ? '+' : ''}${selectedStaff.adjustmentPercent}%` : '0%'}
+                  {selectedStaff?.totalAdjustment ? ` (${selectedStaff.totalAdjustment > 0 ? '+' : ''}${formatVND(selectedStaff.totalAdjustment)})` : ''}
+                </strong>
+              </div>
+              <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Tổng Thực Nhận</span>
                 <strong className="text-sm sm:text-base text-emerald-400">{selectedStaff ? formatVND(selectedStaff.totalSalary) : '0đ'}</strong>
               </div>
             </div>
+
+            {selectedStaff?.adjustmentNote && (
+              <div className="text-xs bg-slate-950/20 border border-slate-800/50 p-2.5 rounded-lg text-slate-300">
+                <span className="text-slate-400 font-semibold">Ghi chú điều chỉnh: </span>
+                {selectedStaff.adjustmentNote}
+              </div>
+            )}
 
             {/* Detailed shift list table */}
             <div className="overflow-x-auto -mx-4 sm:-mx-6">

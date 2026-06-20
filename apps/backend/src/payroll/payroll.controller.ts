@@ -130,5 +130,22 @@ export class PayrollController {
     }
     return this.payrollService.unlockPeriod(body.start_date, body.end_date);
   }
+
+  @Post('adjustments')
+  async upsertAdjustment(
+    @Body()
+    body: {
+      userId: string;
+      startDate: string;
+      endDate: string;
+      adjustmentPercent: number;
+      note?: string;
+    },
+  ) {
+    if (!body.userId || !body.startDate || !body.endDate) {
+      throw new Error('Missing userId, startDate or endDate');
+    }
+    return this.payrollService.upsertAdjustment(body);
+  }
 }
 
