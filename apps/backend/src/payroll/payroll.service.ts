@@ -364,7 +364,8 @@ export class PayrollService {
       const adj = adjustmentMap.get(payroll.userId) || { percent: 0, note: '' };
       payroll.adjustmentPercent = adj.percent;
       const grossSalary = payroll.totalSalary;
-      const totalAdjustment = Math.round(grossSalary * (adj.percent / 100));
+      const baseSalaryForAdj = payroll.totalBaseSalary;
+      const totalAdjustment = Math.round(baseSalaryForAdj * (adj.percent / 100));
       payroll.totalAdjustment = totalAdjustment;
       payroll.totalSalary = grossSalary + totalAdjustment;
       payroll.adjustmentNote = adj.note;
