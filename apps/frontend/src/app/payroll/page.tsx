@@ -457,27 +457,26 @@ export default function PayrollPage() {
     setIsSavingServerSalary(true);
     setSettingsMessage(null);
     try {
-      const res = await apiFetch(`${API_URL}/servers/${selectedServerId}`, {
+      const res = await apiFetch(`${API_URL}/shifts/${selectedServerId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           base_salary: parseFloat(serverBaseSalaryInput) || 0,
-          week_start_date: startDate,
         }),
       });
       if (res.ok) {
         setIsServerSalaryDialogOpen(false);
         setSelectedServerId('');
         setServerBaseSalaryInput('');
-        setSettingsMessage({ type: 'success', text: 'Cấu hình lương server đã được lưu!' });
+        setSettingsMessage({ type: 'success', text: 'Cấu hình lương ca đã được lưu!' });
         fetchSettingsAndEntities();
         fetchPayroll();
         setTimeout(() => setSettingsMessage(null), 3000);
       } else {
-        setSettingsMessage({ type: 'error', text: 'Không thể lưu cấu hình lương server.' });
+        setSettingsMessage({ type: 'error', text: 'Không thể lưu cấu hình lương ca.' });
       }
     } catch (err) {
-      console.error('Failed to update server salary:', err);
+      console.error('Failed to update shift salary:', err);
       setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu cấu hình.' });
     } finally {
       setIsSavingServerSalary(false);
@@ -1183,7 +1182,7 @@ export default function PayrollPage() {
                   <div>
                     <CardTitle className="text-base text-slate-200 flex items-center gap-2">
                       <Server className="w-4 h-4 text-cyan-400" />
-                      Cấu Hình Lương Theo Server
+                      Cấu Hình Lương Cơ Bản Theo Ca
                     </CardTitle>
                   </div>
                   <Button
@@ -1204,69 +1203,73 @@ export default function PayrollPage() {
                       <TableHeader className="border-slate-850">
                         <TableRow className="border-slate-850 hover:bg-transparent">
                           <TableHead className="text-slate-400 font-mono text-xs uppercase">SERVER</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase">CA LÀM VIỆC</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase">GHI CHÚ</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">LƯƠNG CƠ BẢN / CA</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {servers
-                          .filter((server: any) => !server.name.includes('+') && server.base_salary > 0)
-                          .map((server) => (
-                            <TableRow key={server.id} className="border-slate-850">
-                              <TableCell className="font-semibold text-slate-200">{server.name}</TableCell>
-                            <TableCell className="text-right font-mono">
-                              <span className="text-slate-200">{formatVND(server.base_salary)}</span>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-1.5">
-                                <Button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedServerId(server.id);
-                                    setServerBaseSalaryInput(server.base_salary.toString());
-                                    setSettingsMessage(null);
-                                    setIsServerSalaryDialogOpen(true);
-                                  }}
-                                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 h-7 w-7 p-0 rounded flex items-center justify-center"
-                                  title="Sửa"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (confirm(`Bạn có chắc chắn muốn xóa cấu hình lương của server ${server.name} không?`)) {
-                                      try {
-                                        const res = await apiFetch(`${API_URL}/servers/${server.id}`, {
-                                          method: 'PUT',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({
-                                            base_salary: 0,
-                                            week_start_date: startDate,
-                                          }),
-                                        });
-                                        if (res.ok) {
-                                          fetchSettingsAndEntities();
-                                          fetchPayroll();
+                        {shifts
+                          .filter((shift: any) => shift.base_salary !== null && shift.base_salary > 0)
+                          .map((shift) => (
+                            <TableRow key={shift.id} className="border-slate-850">
+                              <TableCell className="font-semibold text-slate-200">{shift.server?.name || 'N/A'}</TableCell>
+                              <TableCell className="font-mono text-slate-200 text-xs">{shift.start_time}</TableCell>
+                              <TableCell className="text-xs text-slate-350">{shift.name || '-'}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                <span className="text-slate-200">{formatVND(shift.base_salary)}</span>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <Button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedServerId(shift.id);
+                                      setServerBaseSalaryInput(shift.base_salary.toString());
+                                      setSettingsMessage(null);
+                                      setIsServerSalaryDialogOpen(true);
+                                    }}
+                                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 h-7 w-7 p-0 rounded flex items-center justify-center"
+                                    title="Sửa"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={async () => {
+                                      const displayName = `${shift.server?.name || 'N/A'} ${shift.name ? `(${shift.name})` : ''} [${shift.start_time}]`;
+                                      if (confirm(`Bạn có chắc chắn muốn xóa cấu hình lương của ca ${displayName} không?`)) {
+                                        try {
+                                          const res = await apiFetch(`${API_URL}/shifts/${shift.id}`, {
+                                            method: 'PUT',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              base_salary: null,
+                                            }),
+                                          });
+                                          if (res.ok) {
+                                            fetchSettingsAndEntities();
+                                            fetchPayroll();
+                                          }
+                                        } catch (err) {
+                                          console.error('Failed to remove shift salary:', err);
                                         }
-                                      } catch (err) {
-                                        console.error('Failed to remove server salary:', err);
                                       }
-                                    }
-                                  }}
-                                  className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-400 h-7 w-7 p-0 rounded flex items-center justify-center"
-                                  title="Xóa"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        {servers.filter((server: any) => !server.name.includes('+') && server.base_salary > 0).length === 0 && (
+                                    }}
+                                    className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-400 h-7 w-7 p-0 rounded flex items-center justify-center"
+                                    title="Xóa"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        {shifts.filter((shift: any) => shift.base_salary !== null && shift.base_salary > 0).length === 0 && (
                           <TableRow>
-                            <TableCell colSpan={3} className="text-center text-slate-500 py-8 text-xs">
-                              Chưa cấu hình lương cho server nào.
+                            <TableCell colSpan={5} className="text-center text-slate-500 py-8 text-xs">
+                              Chưa cấu hình lương cho ca nào.
                             </TableCell>
                           </TableRow>
                         )}
@@ -1686,7 +1689,7 @@ export default function PayrollPage() {
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-cyan-400">
               <Sparkles className="w-5 h-5 text-cyan-400" />
-              Cấu Hướng Thưởng Theo Ca
+              Cấu Hình Thưởng Theo Ca
             </DialogTitle>
             <DialogDescription className="text-slate-400 text-xs mt-2 text-sans">
               Chọn ca của tuần và cài đặt mức thưởng kèm ngày áp dụng.
@@ -1813,22 +1816,35 @@ export default function PayrollPage() {
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-cyan-400">
               <Server className="w-5 h-5 text-cyan-400" />
-              Cấu Hình Lương Theo Server
+              Cấu Hình Lương Cơ Bản Theo Ca
             </DialogTitle>
             <DialogDescription className="text-slate-400 text-xs mt-2 text-sans">
-              Chọn server và cài đặt mức lương cơ bản trên mỗi ca làm việc.
+              Chọn ca làm việc và cài đặt mức lương cơ bản trên mỗi ca làm việc.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveServerSalary} className="space-y-4 text-sm pt-2">
             <div className="space-y-1">
-              <label className="text-[10px] text-slate-400 font-mono">CHỌN SERVER</label>
+              <label className="text-[10px] text-slate-400 font-mono">CHỌN CA LÀM VIỆC</label>
               <Select
-                options={serverSelectOptions}
-                value={serverSelectOptions.find(o => o.value === selectedServerId) || null}
+                options={shiftOptions}
+                value={shiftOptions.find(o => o.value === selectedServerId) || null}
                 onChange={(val: any) => setSelectedServerId(val ? val.value : '')}
-                placeholder="-- Chọn server --"
+                placeholder="-- Chọn ca làm --"
                 isSearchable
                 styles={reactSelectStyles}
+                formatOptionLabel={({ serverName, name, startTime }: any) => (
+                  <div className="flex justify-between items-center w-full text-xs">
+                    <span className="text-slate-200">
+                      <strong className="font-bold text-slate-100">{serverName}</strong>
+                      <span className="text-slate-400 ml-2 font-mono">({startTime})</span>
+                    </span>
+                    {name && (
+                      <span className="text-[10px] bg-slate-850 border border-slate-800 text-cyan-400 px-1.5 py-0.5 rounded font-medium ml-2">
+                        {name}
+                      </span>
+                    )}
+                  </div>
+                )}
               />
             </div>
             

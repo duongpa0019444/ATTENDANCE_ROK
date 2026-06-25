@@ -16,12 +16,13 @@ export class ServersService {
         const history = await this.prisma.serverSalaryHistory.findFirst({
           where: {
             server_id: server.id,
-            start_date: { lte: parsedDate },
+            start_date: parsedDate,
           },
-          orderBy: { start_date: 'desc' },
         });
         if (history) {
           server.base_salary = history.base_salary;
+        } else {
+          server.base_salary = 0;
         }
       }
     }

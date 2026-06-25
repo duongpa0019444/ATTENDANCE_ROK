@@ -245,9 +245,17 @@ export class PayrollService {
 
         // 1. Base Salary
         const shiftBase = assignment.shift.base_salary;
-        const histBase = salaryHistories.find(
-          (h) => h.server_id === assignment.shift.server_id && h.start_date.getTime() <= assignment.work_date.getTime()
-        )?.base_salary;
+        const shiftWeekStart = assignment.shift.week_start_date;
+        const histBase = salaryHistories.find((h) => {
+          if (h.server_id !== assignment.shift.server_id) return false;
+          if (shiftWeekStart) {
+            return h.start_date.getTime() === shiftWeekStart.getTime();
+          }
+          const start = new Date(h.start_date);
+          const end = new Date(start);
+          end.setDate(start.getDate() + 7);
+          return assignment.work_date >= start && assignment.work_date < end;
+        })?.base_salary;
         const serverBase = histBase !== undefined ? histBase : assignment.shift.server?.base_salary;
 
         baseSalary = shiftBase !== null && shiftBase !== undefined
