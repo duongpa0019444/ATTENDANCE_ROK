@@ -12,7 +12,7 @@ import {
   Calendar, Download, Settings, Save,
   Server, Clock, Loader2, Sparkles, ArrowRight,
   Lock, Unlock, ShieldAlert, ChevronLeft, ChevronRight,
-  Plus, Trash2, Edit2
+  Plus, Trash2, Edit2, Maximize2, Minimize2
 } from 'lucide-react';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -218,7 +218,8 @@ export default function PayrollPage() {
 
   // Global Salary settings
   const [systemSettings, setSystemSettings] = useState({
-    nightShift22_3Bonus: 10000,
+    nightShift22_24Bonus: 10000,
+    nightShift0_3Bonus: 10000,
     nightShift3_7Bonus: 20000,
     weekendBonus: 20000,
     defaultServerSalary: 100000,
@@ -242,6 +243,7 @@ export default function PayrollPage() {
   const [selectedShiftId, setSelectedShiftId] = useState<string>('');
   const [selectedShiftBonusDays, setSelectedShiftBonusDays] = useState<string[]>(['2', '3', '4', '5', '6', '7', 'CN']);
   const [isSavingShiftBonus, setIsSavingShiftBonus] = useState<boolean>(false);
+  const [isListFullscreen, setIsListFullscreen] = useState<boolean>(false);
 
   const checkLockStatus = useCallback(async () => {
     setIsCheckingLock(true);
@@ -544,13 +546,13 @@ export default function PayrollPage() {
       });
 
       if (res.ok) {
-        setSettingsMessage({ type: 'success', text: 'Cấu hình thưởng ca đã được lưu!' });
+        setSettingsMessage({ type: 'success', text: 'Cấu hình phụ cấp ca đã được lưu!' });
         fetchSettingsAndEntities();
         fetchPayroll();
         setIsShiftBonusDialogOpen(false);
         setTimeout(() => setSettingsMessage(null), 3000);
       } else {
-        setSettingsMessage({ type: 'error', text: 'Không thể lưu cấu hình thưởng ca.' });
+        setSettingsMessage({ type: 'error', text: 'Không thể lưu cấu hình phụ cấp ca.' });
       }
     } catch (err) {
       console.error('Failed to save shift bonus:', err);
@@ -869,14 +871,39 @@ export default function PayrollPage() {
 
         {/* Main Contents */}
         {activeTab === 'payroll' ? (
-          <Card className="bg-slate-900/40 border-slate-850 backdrop-blur-xl">
-            <CardHeader>
-              <CardTitle className="text-lg text-slate-200 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-cyan-400" />
-                Danh Sách Lương Nhân Sự
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          <Card className={`border-slate-850 backdrop-blur-xl transition-all duration-300 ${
+            isListFullscreen 
+              ? 'fixed inset-0 z-50 w-screen h-screen rounded-none overflow-y-auto p-0 bg-slate-950 flex flex-col border-none' 
+              : 'bg-slate-900/40'
+          }`}>
+            {isListFullscreen ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsListFullscreen(false)}
+                className="fixed top-3 right-3 z-50 text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 rounded-full w-8 h-8 flex items-center justify-center border border-slate-800 shadow-lg"
+                title="Thu nhỏ"
+              >
+                <Minimize2 className="w-4 h-4 text-cyan-400" />
+              </Button>
+            ) : (
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <CardTitle className="text-lg text-slate-200 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-cyan-400" />
+                  Danh Sách Lương Nhân Sự
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsListFullscreen(true)}
+                  className="text-slate-400 hover:text-white flex items-center gap-1.5 h-8 px-3 rounded-lg hover:bg-slate-800"
+                >
+                  <Maximize2 className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs">Toàn màn hình</span>
+                </Button>
+              </CardHeader>
+            )}
+            <CardContent className={isListFullscreen ? 'flex-1 overflow-y-auto p-0' : ''}>
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-2">
                   <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
@@ -893,7 +920,7 @@ export default function PayrollPage() {
                         <BaseSalaryHead />
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP ĐÊM</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CUỐI TUẦN</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">THƯỞNG CA</TableHead>
+                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CA</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP KHÁC</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐIỀU CHỈNH (%)</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right font-bold text-cyan-400">THỰC NHẬN</TableHead>
@@ -1004,25 +1031,39 @@ export default function PayrollPage() {
                 <CardContent className="pt-4">
                   <form onSubmit={handleSaveSystemSettings} className="space-y-4 text-sm">
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (22H - 3H)</label>
+                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (22H - 23H59)</label>
                       <Input
                         type="text"
                         inputMode="numeric"
-                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift22_3Bonus)}
+                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift22_24Bonus || 0)}
                         onChange={(e) => {
                           const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
-                          setSystemSettings({ ...systemSettings, nightShift22_3Bonus: isNaN(raw) ? 0 : raw });
+                          setSystemSettings({ ...systemSettings, nightShift22_24Bonus: isNaN(raw) ? 0 : raw });
                         }}
                         required
                         className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (3H - 7H)</label>
+                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (00H - 2H59)</label>
                       <Input
                         type="text"
                         inputMode="numeric"
-                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift3_7Bonus)}
+                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift0_3Bonus || 0)}
+                        onChange={(e) => {
+                          const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
+                          setSystemSettings({ ...systemSettings, nightShift0_3Bonus: isNaN(raw) ? 0 : raw });
+                        }}
+                        required
+                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (3H - 6H59)</label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={new Intl.NumberFormat('vi-VN').format(systemSettings.nightShift3_7Bonus || 0)}
                         onChange={(e) => {
                           const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
                           setSystemSettings({ ...systemSettings, nightShift3_7Bonus: isNaN(raw) ? 0 : raw });
@@ -1211,7 +1252,7 @@ export default function PayrollPage() {
                       </TableHeader>
                       <TableBody>
                         {shifts
-                          .filter((shift: any) => shift.base_salary !== null && shift.base_salary > 0)
+                          .filter((shift: any) => shift.base_salary !== null && shift.base_salary >= 0)
                           .map((shift) => (
                             <TableRow key={shift.id} className="border-slate-850">
                               <TableCell className="font-semibold text-slate-200">{shift.server?.name || 'N/A'}</TableCell>
@@ -1266,7 +1307,7 @@ export default function PayrollPage() {
                               </TableCell>
                             </TableRow>
                           ))}
-                        {shifts.filter((shift: any) => shift.base_salary !== null && shift.base_salary > 0).length === 0 && (
+                        {shifts.filter((shift: any) => shift.base_salary !== null && shift.base_salary >= 0).length === 0 && (
                           <TableRow>
                             <TableCell colSpan={5} className="text-center text-slate-500 py-8 text-xs">
                               Chưa cấu hình lương cho ca nào.
@@ -1285,7 +1326,7 @@ export default function PayrollPage() {
                   <div>
                     <CardTitle className="text-base text-slate-200 flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-cyan-400" />
-                      Danh Sách Thưởng Ca Đang Cấu Hình
+                      Cấu Hình Phụ Cấp Theo Ca
                     </CardTitle>
                   </div>
                   <Button
@@ -1308,7 +1349,7 @@ export default function PayrollPage() {
                         <TableRow className="border-slate-850 hover:bg-transparent">
                           <TableHead className="text-slate-400 font-mono text-xs uppercase">SERVER</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase">CA LÀM VIỆC</TableHead>
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">MỨC THƯỞNG</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">MỨC PHỤ CẤP</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-center">NGÀY ÁP DỤNG</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
                         </TableRow>
@@ -1364,7 +1405,7 @@ export default function PayrollPage() {
                                   <Button
                                     type="button"
                                     onClick={async () => {
-                                      if (confirm('Bạn có chắc chắn muốn xóa cấu hình thưởng của ca này không?')) {
+                                      if (confirm('Bạn có chắc chắn muốn xóa cấu hình phụ cấp của ca này không?')) {
                                         try {
                                           const res = await apiFetch(`${API_URL}/shifts/${shift.id}`, {
                                             method: 'PUT',
@@ -1396,7 +1437,7 @@ export default function PayrollPage() {
                         {shifts.filter((shift: any) => shift.bonus_salary > 0).length === 0 && (
                           <TableRow>
                             <TableCell colSpan={5} className="text-center text-slate-500 py-8 text-xs">
-                              Chưa cấu hình thưởng cho ca nào trong tuần này.
+                              Chưa cấu hình phụ cấp cho ca nào trong tuần này.
                             </TableCell>
                           </TableRow>
                         )}
@@ -1500,7 +1541,7 @@ export default function PayrollPage() {
           <div className="space-y-4 pt-2">
 
             {/* Staff Mini Stat block */}
-            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 p-3 bg-slate-950/40 border border-slate-800 rounded-lg text-xs leading-relaxed">
+            <div className="grid grid-cols-2 sm:grid-cols-7 gap-3 p-3 bg-slate-950/40 border border-slate-800 rounded-lg text-xs leading-relaxed">
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Số Ca Hoàn Thành</span>
                 <strong className="text-sm sm:text-base text-cyan-400">{selectedStaff?.completedShifts} / {selectedStaff?.totalShifts}</strong>
@@ -1508,6 +1549,14 @@ export default function PayrollPage() {
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Phụ Cấp Đêm</span>
                 <strong className="text-sm sm:text-base text-yellow-400">{selectedStaff ? formatVND(selectedStaff.totalNightBonus) : '0đ'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Phụ Cấp CT</span>
+                <strong className="text-sm sm:text-base text-orange-400">{selectedStaff ? formatVND(selectedStaff.totalWeekendBonus) : '0đ'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Phụ Cấp Ca</span>
+                <strong className="text-sm sm:text-base text-pink-400">{selectedStaff ? formatVND(selectedStaff.totalShiftReward) : '0đ'}</strong>
               </div>
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Phụ Cấp Khác</span>
@@ -1546,7 +1595,7 @@ export default function PayrollPage() {
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">P.CẤP ĐÊM</TableHead>
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">P.CẤP CT</TableHead>
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">PHỤ CẤP KHÁC</TableHead>
-                      <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">THƯỞNG</TableHead>
+                      <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">P.CẤP CA</TableHead>
                       <TableHead className="text-slate-900 font-bold text-[11px] uppercase text-right">TỔNG</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1689,10 +1738,10 @@ export default function PayrollPage() {
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-cyan-400">
               <Sparkles className="w-5 h-5 text-cyan-400" />
-              Cấu Hình Thưởng Theo Ca
+              Cấu Hinh Phụ Cấp Theo Ca
             </DialogTitle>
             <DialogDescription className="text-slate-400 text-xs mt-2 text-sans">
-              Chọn ca của tuần và cài đặt mức thưởng kèm ngày áp dụng.
+              Chọn ca của tuần và cài đặt mức phụ cấp kèm ngày áp dụng.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveShiftBonus} className="space-y-4 text-sm pt-2">
@@ -1722,7 +1771,7 @@ export default function PayrollPage() {
             </div>
             
             <div className="space-y-1">
-              <label className="text-[10px] text-slate-400 font-mono">MỨC TIỀN THƯỞNG (VND)</label>
+              <label className="text-[10px] text-slate-400 font-mono">MỨC TIỀN PHỤ CẤP (VND)</label>
               <Input
                 type="text"
                 inputMode="numeric"

@@ -133,12 +133,14 @@ export class PayrollService {
     }
 
     // Fetch system-wide configurations
-    const rawNight22_3 = await this.prisma.getSetting('NIGHT_SHIFT_22_3_BONUS', '10000');
+    const rawNight22_24 = await this.prisma.getSetting('NIGHT_SHIFT_22_24_BONUS', '10000');
+    const rawNight0_3 = await this.prisma.getSetting('NIGHT_SHIFT_0_3_BONUS', '10000');
     const rawNight3_7 = await this.prisma.getSetting('NIGHT_SHIFT_3_7_BONUS', '20000');
     const rawWeekend = await this.prisma.getSetting('WEEKEND_BONUS', '20000');
     const rawDefaultSalary = await this.prisma.getSetting('DEFAULT_SERVER_SALARY', '100000');
 
-    const bonusNight22_3 = parseFloat(rawNight22_3);
+    const bonusNight22_24 = parseFloat(rawNight22_24);
+    const bonusNight0_3 = parseFloat(rawNight0_3);
     const bonusNight3_7 = parseFloat(rawNight3_7);
     const bonusWeekend = parseFloat(rawWeekend);
     const defaultSalary = parseFloat(rawDefaultSalary);
@@ -267,11 +269,15 @@ export class PayrollService {
         const [sh, sm] = startTime.split(':').map(Number);
         const startHours = sh + sm / 60;
 
-        // Check if starts in [22:00, 03:00) (meaning >= 22 or < 3)
-        if (startHours >= 22 || startHours < 3) {
-          nightBonus = bonusNight22_3;
+        // Check if starts in [22:00, 23:59] (meaning >= 22 and < 24)
+        if (startHours >= 22 && startHours < 24) {
+          nightBonus = bonusNight22_24;
         }
-        // Check if starts in [03:00, 07:00) (meaning >= 3 and < 7)
+        // Check if starts in [00:00, 02:59] (meaning >= 0 and < 3)
+        else if (startHours >= 0 && startHours < 3) {
+          nightBonus = bonusNight0_3;
+        }
+        // Check if starts in [03:00, 06:59] (meaning >= 3 and < 7)
         else if (startHours >= 3 && startHours < 7) {
           nightBonus = bonusNight3_7;
         }
@@ -383,13 +389,15 @@ export class PayrollService {
   }
 
   async getSettings() {
-    const rawNight22_3 = await this.prisma.getSetting('NIGHT_SHIFT_22_3_BONUS', '10000');
+    const rawNight22_24 = await this.prisma.getSetting('NIGHT_SHIFT_22_24_BONUS', '10000');
+    const rawNight0_3 = await this.prisma.getSetting('NIGHT_SHIFT_0_3_BONUS', '10000');
     const rawNight3_7 = await this.prisma.getSetting('NIGHT_SHIFT_3_7_BONUS', '20000');
     const rawWeekend = await this.prisma.getSetting('WEEKEND_BONUS', '20000');
     const rawDefaultSalary = await this.prisma.getSetting('DEFAULT_SERVER_SALARY', '100000');
 
     return {
-      nightShift22_3Bonus: parseFloat(rawNight22_3),
+      nightShift22_24Bonus: parseFloat(rawNight22_24),
+      nightShift0_3Bonus: parseFloat(rawNight0_3),
       nightShift3_7Bonus: parseFloat(rawNight3_7),
       weekendBonus: parseFloat(rawWeekend),
       defaultServerSalary: parseFloat(rawDefaultSalary),
@@ -397,13 +405,17 @@ export class PayrollService {
   }
 
   async updateSettings(body: {
-    nightShift22_3Bonus?: number;
+    nightShift22_24Bonus?: number;
+    nightShift0_3Bonus?: number;
     nightShift3_7Bonus?: number;
     weekendBonus?: number;
     defaultServerSalary?: number;
   }) {
-    if (body.nightShift22_3Bonus !== undefined) {
-      await this.prisma.setSetting('NIGHT_SHIFT_22_3_BONUS', body.nightShift22_3Bonus.toString());
+    if (body.nightShift22_24Bonus !== undefined) {
+      await this.prisma.setSetting('NIGHT_SHIFT_22_24_BONUS', body.nightShift22_24Bonus.toString());
+    }
+    if (body.nightShift0_3Bonus !== undefined) {
+      await this.prisma.setSetting('NIGHT_SHIFT_0_3_BONUS', body.nightShift0_3Bonus.toString());
     }
     if (body.nightShift3_7Bonus !== undefined) {
       await this.prisma.setSetting('NIGHT_SHIFT_3_7_BONUS', body.nightShift3_7Bonus.toString());

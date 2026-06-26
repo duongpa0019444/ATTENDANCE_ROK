@@ -45,7 +45,8 @@ export class PayrollController {
   async updateSettings(
     @Body()
     body: {
-      nightShift22_3Bonus?: number;
+      nightShift22_24Bonus?: number;
+      nightShift0_3Bonus?: number;
       nightShift3_7Bonus?: number;
       weekendBonus?: number;
       defaultServerSalary?: number;
