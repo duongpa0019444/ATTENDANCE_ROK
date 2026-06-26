@@ -269,20 +269,29 @@ export class PayrollService {
         const [sh, sm] = startTime.split(':').map(Number);
         const startHours = sh + sm / 60;
 
-        // Check if starts in [22:00, 23:59] (meaning >= 22 and < 24)
-        if (startHours >= 22 && startHours < 24) {
-          nightBonus = bonusNight22_24;
-        }
-        // Check if starts in [00:00, 02:59] (meaning >= 0 and < 3)
-        else if (startHours >= 0 && startHours < 3) {
-          nightBonus = bonusNight0_3;
-        }
-        // Check if starts in [03:00, 06:59] (meaning >= 3 and < 7)
-        else if (startHours >= 3 && startHours < 7) {
-          nightBonus = bonusNight3_7;
+        const isNightShift = (startHours >= 22 && startHours < 24) || (startHours >= 0 && startHours < 7);
+        if (isNightShift) {
+          // Check if starts in [22:00, 23:59] (meaning >= 22 and < 24)
+          if (startHours >= 22 && startHours < 24) {
+            nightBonus = (assignment.shift as any).night_bonus_22_24 !== null && (assignment.shift as any).night_bonus_22_24 !== undefined
+              ? (assignment.shift as any).night_bonus_22_24
+              : bonusNight22_24;
+          }
+          // Check if starts in [00:00, 02:59] (meaning >= 0 and < 3)
+          else if (startHours >= 0 && startHours < 3) {
+            nightBonus = (assignment.shift as any).night_bonus_0_3 !== null && (assignment.shift as any).night_bonus_0_3 !== undefined
+              ? (assignment.shift as any).night_bonus_0_3
+              : bonusNight0_3;
+          }
+          // Check if starts in [03:00, 06:59] (meaning >= 3 and < 7)
+          else if (startHours >= 3 && startHours < 7) {
+            nightBonus = (assignment.shift as any).night_bonus_3_7 !== null && (assignment.shift as any).night_bonus_3_7 !== undefined
+              ? (assignment.shift as any).night_bonus_3_7
+              : bonusNight3_7;
+          }
         }
 
-                        // 3. Weekend Bonus
+        // 3. Weekend Bonus
         // A shift gets weekend bonus if its start time falls within:
         // 7:00 AM Saturday -> 6:59 AM Monday
         const workDate = new Date(assignment.work_date);
@@ -309,7 +318,11 @@ export class PayrollService {
         monday7am.setHours(7, 0, 0, 0);
 
         if (shiftStartDateTime >= saturday7am && shiftStartDateTime < monday7am) {
-          weekendBonus = bonusWeekend;
+          if (assignment.shift.weekend_bonus !== null && assignment.shift.weekend_bonus !== undefined) {
+            weekendBonus = assignment.shift.weekend_bonus;
+          } else {
+            weekendBonus = bonusWeekend;
+          }
         }
 
         // 4. Date-specific allowance

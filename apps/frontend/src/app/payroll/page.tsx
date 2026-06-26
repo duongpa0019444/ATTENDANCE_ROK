@@ -242,6 +242,10 @@ export default function PayrollPage() {
   const [isSavingAllowance, setIsSavingAllowance] = useState<boolean>(false);
   const [selectedShiftId, setSelectedShiftId] = useState<string>('');
   const [selectedShiftBonusDays, setSelectedShiftBonusDays] = useState<string[]>(['2', '3', '4', '5', '6', '7', 'CN']);
+  const [shiftNight22_24BonusInput, setShiftNight22_24BonusInput] = useState<string>('');
+  const [shiftNight0_3BonusInput, setShiftNight0_3BonusInput] = useState<string>('');
+  const [shiftNight3_7BonusInput, setShiftNight3_7BonusInput] = useState<string>('');
+  const [shiftWeekendBonusInput, setShiftWeekendBonusInput] = useState<string>('');
   const [isSavingShiftBonus, setIsSavingShiftBonus] = useState<boolean>(false);
   const [isListFullscreen, setIsListFullscreen] = useState<boolean>(false);
 
@@ -518,9 +522,17 @@ export default function PayrollPage() {
       } else {
         setSelectedShiftBonusDays(['2', '3', '4', '5', '6', '7', 'CN']);
       }
+      setShiftNight22_24BonusInput(shift.night_bonus_22_24 !== null && shift.night_bonus_22_24 !== undefined ? String(shift.night_bonus_22_24) : '');
+      setShiftNight0_3BonusInput(shift.night_bonus_0_3 !== null && shift.night_bonus_0_3 !== undefined ? String(shift.night_bonus_0_3) : '');
+      setShiftNight3_7BonusInput(shift.night_bonus_3_7 !== null && shift.night_bonus_3_7 !== undefined ? String(shift.night_bonus_3_7) : '');
+      setShiftWeekendBonusInput(shift.weekend_bonus !== null && shift.weekend_bonus !== undefined ? String(shift.weekend_bonus) : '');
     } else {
       setShiftBonusSalaryInput('');
       setSelectedShiftBonusDays(['2', '3', '4', '5', '6', '7', 'CN']);
+      setShiftNight22_24BonusInput('');
+      setShiftNight0_3BonusInput('');
+      setShiftNight3_7BonusInput('');
+      setShiftWeekendBonusInput('');
     }
   };
 
@@ -540,8 +552,12 @@ export default function PayrollPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           base_salary: baseSalary,
-          bonus_salary: bonusSalary,
-          bonus_days: bonusDays,
+          bonus_salary: 0,
+          bonus_days: null,
+          night_bonus_22_24: shiftNight22_24BonusInput !== '' ? parseFloat(shiftNight22_24BonusInput) : null,
+          night_bonus_0_3: shiftNight0_3BonusInput !== '' ? parseFloat(shiftNight0_3BonusInput) : null,
+          night_bonus_3_7: shiftNight3_7BonusInput !== '' ? parseFloat(shiftNight3_7BonusInput) : null,
+          weekend_bonus: shiftWeekendBonusInput !== '' ? parseFloat(shiftWeekendBonusInput) : null,
         }),
       });
 
@@ -920,7 +936,6 @@ export default function PayrollPage() {
                         <BaseSalaryHead />
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP ĐÊM</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CUỐI TUẦN</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CA</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP KHÁC</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐIỀU CHỈNH (%)</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right font-bold text-cyan-400">THỰC NHẬN</TableHead>
@@ -954,7 +969,6 @@ export default function PayrollPage() {
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalBaseSalary)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalNightBonus)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalWeekendBonus)}</TableCell>
-                          <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalShiftReward)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalOtherAllowance)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">
                             <span className={staff.adjustmentPercent && staff.adjustmentPercent !== 0 ? (staff.adjustmentPercent > 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold') : 'text-slate-400'}>
@@ -1334,6 +1348,10 @@ export default function PayrollPage() {
                       setSelectedShiftId('');
                       setShiftBonusSalaryInput('');
                       setSelectedShiftBonusDays(['2', '3', '4', '5', '6', '7', 'CN']);
+                      setShiftNight22_24BonusInput('');
+                      setShiftNight0_3BonusInput('');
+                      setShiftNight3_7BonusInput('');
+                      setShiftWeekendBonusInput('');
                       setSettingsMessage(null);
                       setIsShiftBonusDialogOpen(true);
                     }}
@@ -1349,14 +1367,16 @@ export default function PayrollPage() {
                         <TableRow className="border-slate-850 hover:bg-transparent">
                           <TableHead className="text-slate-400 font-mono text-xs uppercase">SERVER</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase">CA LÀM VIỆC</TableHead>
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">MỨC PHỤ CẤP</TableHead>
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-center">NGÀY ÁP DỤNG</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐÊM (22H-23H59)</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐÊM (00H-02H59)</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐÊM (03H-06H59)</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">CUỐI TUẦN (T7/CN)</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {shifts
-                          .filter((shift: any) => shift.bonus_salary > 0)
+                          .filter((shift: any) => shift.night_bonus_22_24 !== null || shift.night_bonus_0_3 !== null || shift.night_bonus_3_7 !== null || shift.weekend_bonus !== null)
                           .map((shift) => (
                             <TableRow key={shift.id} className="border-slate-850">
                               <TableCell className="font-semibold text-slate-200">
@@ -1367,20 +1387,16 @@ export default function PayrollPage() {
                                 {shift.start_time}
                               </TableCell>
                               <TableCell className="text-right font-mono text-slate-200">
-                                {formatVND(shift.bonus_salary)}
+                                {shift.night_bonus_22_24 !== null ? formatVND(shift.night_bonus_22_24) : '-'}
                               </TableCell>
-                              <TableCell className="text-center text-xs text-slate-300">
-                                {shift.bonus_days ? (
-                                  <div className="flex flex-wrap gap-1 justify-center">
-                                    {shift.bonus_days.split(',').map((day: string) => (
-                                      <Badge key={day} className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[9px] py-0 px-1">
-                                        {day === 'CN' ? 'CN' : `T${day}`}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="text-[10px] text-slate-500">Cả tuần</span>
-                                )}
+                              <TableCell className="text-right font-mono text-slate-200">
+                                {shift.night_bonus_0_3 !== null ? formatVND(shift.night_bonus_0_3) : '-'}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-slate-200">
+                                {shift.night_bonus_3_7 !== null ? formatVND(shift.night_bonus_3_7) : '-'}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-slate-200">
+                                {shift.weekend_bonus !== null ? formatVND(shift.weekend_bonus) : '-'}
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-1.5">
@@ -1394,6 +1410,10 @@ export default function PayrollPage() {
                                       } else {
                                         setSelectedShiftBonusDays(['2', '3', '4', '5', '6', '7', 'CN']);
                                       }
+                                      setShiftNight22_24BonusInput(shift.night_bonus_22_24 !== null && shift.night_bonus_22_24 !== undefined ? String(shift.night_bonus_22_24) : '');
+                                      setShiftNight0_3BonusInput(shift.night_bonus_0_3 !== null && shift.night_bonus_0_3 !== undefined ? String(shift.night_bonus_0_3) : '');
+                                      setShiftNight3_7BonusInput(shift.night_bonus_3_7 !== null && shift.night_bonus_3_7 !== undefined ? String(shift.night_bonus_3_7) : '');
+                                      setShiftWeekendBonusInput(shift.weekend_bonus !== null && shift.weekend_bonus !== undefined ? String(shift.weekend_bonus) : '');
                                       setSettingsMessage(null);
                                       setIsShiftBonusDialogOpen(true);
                                     }}
@@ -1414,6 +1434,10 @@ export default function PayrollPage() {
                                               base_salary: shift.base_salary,
                                               bonus_salary: 0,
                                               bonus_days: null,
+                                              night_bonus_22_24: null,
+                                              night_bonus_0_3: null,
+                                              night_bonus_3_7: null,
+                                              weekend_bonus: null,
                                             }),
                                           });
                                           if (res.ok) {
@@ -1434,9 +1458,9 @@ export default function PayrollPage() {
                               </TableCell>
                             </TableRow>
                           ))}
-                        {shifts.filter((shift: any) => shift.bonus_salary > 0).length === 0 && (
+                        {shifts.filter((shift: any) => shift.night_bonus_22_24 !== null || shift.night_bonus_0_3 !== null || shift.night_bonus_3_7 !== null || shift.weekend_bonus !== null).length === 0 && (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center text-slate-500 py-8 text-xs">
+                            <TableCell colSpan={7} className="text-center text-slate-500 py-8 text-xs">
                               Chưa cấu hình phụ cấp cho ca nào trong tuần này.
                             </TableCell>
                           </TableRow>
@@ -1770,64 +1794,89 @@ export default function PayrollPage() {
               />
             </div>
             
+
+
             <div className="space-y-1">
-              <label className="text-[10px] text-slate-400 font-mono">MỨC TIỀN PHỤ CẤP (VND)</label>
+              <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (22H - 23H59) - ĐỂ TRỐNG NẾU THEO MẶC ĐỊNH</label>
               <Input
                 type="text"
                 inputMode="numeric"
-                value={shiftBonusSalaryInput ? new Intl.NumberFormat('vi-VN').format(Number(shiftBonusSalaryInput)) : ''}
+                value={shiftNight22_24BonusInput ? new Intl.NumberFormat('vi-VN').format(Number(shiftNight22_24BonusInput)) : ''}
                 onChange={(e) => {
-                  const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
-                  setShiftBonusSalaryInput(isNaN(raw) ? '' : String(raw));
+                  const val = e.target.value.replace(/\./g, '').replace(/,/g, '');
+                  if (val === '') {
+                    setShiftNight22_24BonusInput('');
+                  } else {
+                    const raw = parseInt(val, 10);
+                    setShiftNight22_24BonusInput(isNaN(raw) ? '' : String(raw));
+                  }
                 }}
-                required
-                placeholder="VD: 50.000"
+                placeholder="VD: 10.000"
                 className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
               />
             </div>
 
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-[10px] text-slate-400 font-mono uppercase">Ngày áp dụng</label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allDays = ['2', '3', '4', '5', '6', '7', 'CN'];
-                    if (selectedShiftBonusDays.length === allDays.length) {
-                      setSelectedShiftBonusDays([]);
-                    } else {
-                      setSelectedShiftBonusDays(allDays);
-                    }
-                  }}
-                  className="text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors font-mono"
-                >
-                  {selectedShiftBonusDays.length === 7 ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-4 gap-2 bg-slate-950/20 border border-slate-800/60 p-2.5 rounded-lg">
-                {['2', '3', '4', '5', '6', '7', 'CN'].map((day) => {
-                  const isChecked = selectedShiftBonusDays.includes(day);
-                  return (
-                    <label key={day} className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-slate-100 font-sans">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {
-                          if (isChecked) {
-                            setSelectedShiftBonusDays(selectedShiftBonusDays.filter(d => d !== day));
-                          } else {
-                            setSelectedShiftBonusDays([...selectedShiftBonusDays, day]);
-                          }
-                        }}
-                        className="w-3.5 h-3.5 rounded border-slate-800 bg-slate-950 text-cyan-500 focus:ring-cyan-500/20"
-                      />
-                      {day === 'CN' ? 'CN' : `T${day}`}
-                    </label>
-                  );
-                })}
-              </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (00H - 2H59) - ĐỂ TRỐNG NẾU THEO MẶC ĐỊNH</label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={shiftNight0_3BonusInput ? new Intl.NumberFormat('vi-VN').format(Number(shiftNight0_3BonusInput)) : ''}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\./g, '').replace(/,/g, '');
+                  if (val === '') {
+                    setShiftNight0_3BonusInput('');
+                  } else {
+                    const raw = parseInt(val, 10);
+                    setShiftNight0_3BonusInput(isNaN(raw) ? '' : String(raw));
+                  }
+                }}
+                placeholder="VD: 20.000"
+                className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+              />
             </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CA ĐÊM (3H - 6H59) - ĐỂ TRỐNG NẾU THEO MẶC ĐỊNH</label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={shiftNight3_7BonusInput ? new Intl.NumberFormat('vi-VN').format(Number(shiftNight3_7BonusInput)) : ''}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\./g, '').replace(/,/g, '');
+                  if (val === '') {
+                    setShiftNight3_7BonusInput('');
+                  } else {
+                    const raw = parseInt(val, 10);
+                    setShiftNight3_7BonusInput(isNaN(raw) ? '' : String(raw));
+                  }
+                }}
+                placeholder="VD: 30.000"
+                className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP CUỐI TUẦN (VND) - ĐỂ TRỐNG NẾU THEO MẶC ĐỊNH</label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={shiftWeekendBonusInput ? new Intl.NumberFormat('vi-VN').format(Number(shiftWeekendBonusInput)) : ''}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\./g, '').replace(/,/g, '');
+                  if (val === '') {
+                    setShiftWeekendBonusInput('');
+                  } else {
+                    const raw = parseInt(val, 10);
+                    setShiftWeekendBonusInput(isNaN(raw) ? '' : String(raw));
+                  }
+                }}
+                placeholder="VD: 40.000"
+                className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
+              />
+            </div>
+
+
 
             {settingsMessage && (
               <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'

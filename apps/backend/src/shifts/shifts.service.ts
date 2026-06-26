@@ -59,6 +59,10 @@ export class ShiftsService {
         base_salary: data.base_salary !== undefined && data.base_salary !== null ? Number(data.base_salary) : null,
         bonus_salary: data.bonus_salary !== undefined && data.bonus_salary !== null ? Number(data.bonus_salary) : 0,
         bonus_days: data.bonus_days !== undefined ? data.bonus_days : null,
+        night_bonus_22_24: data.night_bonus_22_24 !== undefined && data.night_bonus_22_24 !== null && data.night_bonus_22_24 !== '' ? Number(data.night_bonus_22_24) : null,
+        night_bonus_0_3: data.night_bonus_0_3 !== undefined && data.night_bonus_0_3 !== null && data.night_bonus_0_3 !== '' ? Number(data.night_bonus_0_3) : null,
+        night_bonus_3_7: data.night_bonus_3_7 !== undefined && data.night_bonus_3_7 !== null && data.night_bonus_3_7 !== '' ? Number(data.night_bonus_3_7) : null,
+        weekend_bonus: data.weekend_bonus !== undefined && data.weekend_bonus !== null && data.weekend_bonus !== '' ? Number(data.weekend_bonus) : null,
         week_start_date: data.week_start_date ? new Date(data.week_start_date) : null,
       }
     });
@@ -186,6 +190,10 @@ export class ShiftsService {
         base_salary: data.base_salary !== undefined ? (data.base_salary !== null ? Number(data.base_salary) : null) : undefined,
         bonus_salary: data.bonus_salary !== undefined ? Number(data.bonus_salary) : undefined,
         bonus_days: data.bonus_days !== undefined ? data.bonus_days : undefined,
+        night_bonus_22_24: data.night_bonus_22_24 !== undefined ? (data.night_bonus_22_24 !== null && data.night_bonus_22_24 !== '' ? Number(data.night_bonus_22_24) : null) : undefined,
+        night_bonus_0_3: data.night_bonus_0_3 !== undefined ? (data.night_bonus_0_3 !== null && data.night_bonus_0_3 !== '' ? Number(data.night_bonus_0_3) : null) : undefined,
+        night_bonus_3_7: data.night_bonus_3_7 !== undefined ? (data.night_bonus_3_7 !== null && data.night_bonus_3_7 !== '' ? Number(data.night_bonus_3_7) : null) : undefined,
+        weekend_bonus: data.weekend_bonus !== undefined ? (data.weekend_bonus !== null && data.weekend_bonus !== '' ? Number(data.weekend_bonus) : null) : undefined,
       },
     });
   }
@@ -443,6 +451,10 @@ export class ShiftsService {
           base_salary: shift.base_salary,
           bonus_salary: shift.bonus_salary,
           bonus_days: shift.bonus_days,
+          night_bonus_22_24: shift.night_bonus_22_24,
+          night_bonus_0_3: shift.night_bonus_0_3,
+          night_bonus_3_7: shift.night_bonus_3_7,
+          weekend_bonus: shift.weekend_bonus,
           week_start_date: toWeek,
         },
       });

@@ -85,7 +85,11 @@ model Shift {
   base_salary     Float?
   bonus_salary    Float             @default(0)
   bonus_days      String?
-  created_at      DateTime          @default(now())
+  night_bonus_22_24 Float?
+  night_bonus_0_3   Float?
+  night_bonus_3_7   Float?
+  weekend_bonus     Float?
+  created_at        DateTime          @default(now())
   
   week_start_date DateTime?         @db.Date
   
