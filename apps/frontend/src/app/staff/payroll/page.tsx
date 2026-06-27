@@ -195,7 +195,7 @@ export default function StaffPayrollPage() {
                   <div className="text-sm sm:text-base font-bold text-indigo-400">{formatVND(payrollData.totalWeekendBonus)}</div>
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                  <div className="text-slate-400 text-[10px] font-mono leading-none">CHIA QUỸ TUẦN</div>
+                  <div className="text-slate-400 text-[10px] font-mono leading-none">QUỸ THƯỞNG</div>
                   <div className="text-sm sm:text-base font-bold text-cyan-400">
                     {payrollData.fundPercent ? `${payrollData.fundPercent}%` : '0%'}
                     {payrollData.totalFundShared ? ` (${formatVND(payrollData.totalFundShared)})` : ''}
@@ -207,7 +207,7 @@ export default function StaffPayrollPage() {
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                   <div className="text-slate-400 text-[10px] font-mono leading-none">
-                    ĐIỀU CHỈNH {payrollData.adjustmentPercent ? `(${payrollData.adjustmentPercent > 0 ? '+' : ''}${payrollData.adjustmentPercent}%)` : '(0%)'}
+                    THƯỞNG/PHẠT {payrollData.adjustmentPercent ? `(${payrollData.adjustmentPercent > 0 ? '+' : ''}${payrollData.adjustmentPercent}%)` : '(0%)'}
                   </div>
                   <div className={`text-sm sm:text-base font-bold ${
                     (payrollData.totalAdjustment || 0) > 0

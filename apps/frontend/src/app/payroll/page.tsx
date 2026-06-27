@@ -670,7 +670,7 @@ export default function PayrollPage() {
   const exportToCSV = () => {
     // UTF-8 BOM to make sure Excel handles Vietnamese characters correctly
     let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-    csvContent += 'Nhân Viên,Vai Trò,Tổng Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Phụ Cấp Khác,% Chia Quỹ,Tiền Chia Quỹ,Điều Chỉnh (%),Tiền Điều Chỉnh,Thực Nhận (VND)\n';
+    csvContent += 'Nhân Viên,Vai Trò,Tổng Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Phụ Cấp Khác,% Chia Quỹ,Tiền Chia Quỹ,Thưởng Phạt (%),Tiền Thưởng Phạt,Thực Nhận (VND)\n';
  
     payrollData.forEach((row) => {
       csvContent += `"${row.fullName}","${row.role}",${row.completedShifts},${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.totalOtherAllowance},${row.fundPercent || 0},${row.totalFundShared || 0},${row.adjustmentPercent || 0},${row.totalAdjustment || 0},${row.totalSalary}\n`;
@@ -984,8 +984,8 @@ export default function PayrollPage() {
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP ĐÊM</TableHead>
                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CUỐI TUẦN</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP KHÁC</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">CHIA QUỸ (%)</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐIỀU CHỈNH (%)</TableHead>
+                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">QUỸ THƯỞNG(%)</TableHead>
+                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">THƯỞNG/PHẠT (%)</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right font-bold text-cyan-400">THỰC NHẬN</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
                       </TableRow>
@@ -1065,7 +1065,7 @@ export default function PayrollPage() {
                                   <Sliders className="w-4 h-4" />
                                 </Button>
                                 <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-slate-900 border border-slate-800 text-[10px] text-slate-200 px-2 py-1 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50">
-                                  Điều Chỉnh
+                                  Thưởng/Phạt
                                 </span>
                               </div>
                             </div>
@@ -1611,7 +1611,7 @@ export default function PayrollPage() {
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-cyan-400">
               <Sparkles className="w-5 h-5 text-cyan-400" />
-              Điều Chỉnh Lương - {adjustingStaff?.fullName}
+              Thưởng/Phạt Lương - {adjustingStaff?.fullName}
             </DialogTitle>
             <DialogDescription className="text-slate-400 text-xs mt-2 text-sans">
               Áp dụng phần trăm thưởng hoặc phạt cho tuần lương từ {formatDateVi(startDate)} đến {formatDateVi(endDate)}.
@@ -1619,7 +1619,7 @@ export default function PayrollPage() {
           </DialogHeader>
           <form onSubmit={handleSaveAdjustment} className="space-y-4 text-sm pt-2">
             <div className="space-y-1 pb-2">
-              <label className="text-[10px] text-slate-400 font-mono">TỶ LỆ ĐIỀU CHỈNH (%)</label>
+              <label className="text-[10px] text-slate-400 font-mono">TỶ LỆ THƯỞNG PHẠT (%)</label>
               <Select
                 options={adjustmentPercentOptions}
                 value={adjustmentPercentOptions.find(o => o.value === parseFloat(adjustmentPercentInput)) || null}
@@ -1635,23 +1635,29 @@ export default function PayrollPage() {
             </div>
 
             <div className="space-y-1 pb-2">
-              <label className="text-[10px] text-slate-400 font-mono">TỶ LỆ CHIA QUỸ (%)</label>
-              <Select
-                options={Array.from({ length: 21 }).map((_, i) => ({ value: i * 5, label: `${i * 5}%` }))}
-                value={Array.from({ length: 21 }).map((_, i) => ({ value: i * 5, label: `${i * 5}%` })).find(o => o.value === parseFloat(fundPercentInput)) || null}
-                onChange={(val: any) => setFundPercentInput(val ? String(val.value) : '0')}
-                placeholder="-- Chọn tỷ lệ --"
-                isSearchable
-                styles={reactSelectStyles}
-                menuPortalTarget={typeof window !== 'undefined' ? document.body : undefined}
+              <label className="text-[10px] text-slate-400 font-mono">TỶ LỆ CHIA QUỸ THƯỞNG (%)</label>
+              <Input
+                type="text"
+                value={fundPercentInput}
+                onChange={(e) => {
+                  let val = e.target.value.replace(/,/g, '.');
+                  val = val.replace(/[^0-9.]/g, '');
+                  const parts = val.split('.');
+                  if (parts.length > 2) {
+                    val = parts[0] + '.' + parts.slice(1).join('');
+                  }
+                  setFundPercentInput(val);
+                }}
+                placeholder="Nhập tỷ lệ phần trăm (VD: 5, hoặc 7.5)"
+                className="bg-slate-950/40 border-slate-800 text-slate-100 text-xs focus-visible:ring-cyan-500/20"
               />
               <p className="text-[10px] text-slate-500 mt-1">
-                * Tỷ lệ phần trăm được hưởng từ Quỹ tuần.
+                * Tỷ lệ phần trăm được hưởng từ Quỹ tuần. Cho phép nhập số thập phân.
               </p>
             </div>
             
             <div className="space-y-1">
-              <label className="text-[10px] text-slate-400 font-mono">GHI CHÚ ĐIỀU CHỈNH</label>
+              <label className="text-[10px] text-slate-400 font-mono">GHI CHÚ THƯỞNG PHẠT</label>
               <Input
                 value={adjustmentNoteInput}
                 onChange={(e) => setAdjustmentNoteInput(e.target.value)}
@@ -1727,14 +1733,14 @@ export default function PayrollPage() {
                 <strong className="text-sm sm:text-base text-indigo-400">{selectedStaff ? formatVND(selectedStaff.totalOtherAllowance) : '0đ'}</strong>
               </div>
               <div>
-                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Chia Quỹ Tuần</span>
+                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Quỹ Thưởng</span>
                 <strong className="text-sm sm:text-base text-cyan-400">
                   {selectedStaff?.fundPercent ? `${selectedStaff.fundPercent}%` : '0%'}
                   {selectedStaff?.totalFundShared ? ` (${formatVND(selectedStaff.totalFundShared)})` : ''}
                 </strong>
               </div>
               <div>
-                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Điều chỉnh %</span>
+                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Thưởng/Phạt %</span>
                 <strong className={`text-sm sm:text-base ${selectedStaff?.totalAdjustment && selectedStaff.totalAdjustment > 0 ? 'text-emerald-400' : selectedStaff?.totalAdjustment && selectedStaff.totalAdjustment < 0 ? 'text-red-400' : 'text-slate-400'}`}>
                   {selectedStaff?.adjustmentPercent ? `${selectedStaff.adjustmentPercent > 0 ? '+' : ''}${selectedStaff.adjustmentPercent}%` : '0%'}
                   {selectedStaff?.totalAdjustment ? ` (${selectedStaff.totalAdjustment > 0 ? '+' : ''}${formatVND(selectedStaff.totalAdjustment)})` : ''}
@@ -1748,7 +1754,7 @@ export default function PayrollPage() {
 
             {selectedStaff?.adjustmentNote && (
               <div className="text-xs bg-slate-950/20 border border-slate-800/50 p-2.5 rounded-lg text-slate-300">
-                <span className="text-slate-400 font-semibold">Ghi chú điều chỉnh: </span>
+                <span className="text-slate-400 font-semibold">Ghi chú thưởng/phạt: </span>
                 {selectedStaff.adjustmentNote}
               </div>
             )}
