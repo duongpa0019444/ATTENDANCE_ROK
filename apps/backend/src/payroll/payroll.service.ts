@@ -681,7 +681,25 @@ export class PayrollService {
       updateData.adjustment_percent = Number(body.adjustmentPercent) || 0;
     }
     if (body.fundPercent !== undefined) {
-      updateData.fund_percent = Number(body.fundPercent) || 0;
+      const newFundPercent = Number(body.fundPercent) || 0;
+      // Get other adjustments in the same period
+      const otherAdjustments = await this.prisma.payrollAdjustment.findMany({
+        where: {
+          start_date: start,
+          end_date: end,
+          user_id: { not: body.userId },
+        },
+        select: {
+          fund_percent: true,
+        },
+      });
+      const currentSum = otherAdjustments.reduce((sum, item) => sum + (item.fund_percent || 0), 0);
+      if (currentSum + newFundPercent > 100) {
+        throw new BadRequestException(
+          `Tổng tỷ lệ chia quỹ của các nhân sự trong tuần không được vượt quá 100% (Đã chia ${currentSum}%, bạn muốn chia thêm ${newFundPercent}%).`
+        );
+      }
+      updateData.fund_percent = newFundPercent;
     }
     if (body.note !== undefined) {
       updateData.note = body.note || null;
