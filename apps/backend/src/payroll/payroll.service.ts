@@ -720,7 +720,7 @@ export class PayrollService {
     const start = this.parseDateOnly(body.start_date);
     const end = this.parseDateOnly(body.end_date);
 
-    if (await this.prisma.isDateLocked(start)) {
+    if (await this.prisma.isDateLocked(start, '07:00')) {
       throw new BadRequestException('Tuần này đã chốt bảng lương. Không thể chỉnh sửa quỹ.');
     }
 
