@@ -106,6 +106,8 @@ export class PayrollService {
             totalShiftReward,
             adjustmentPercent: (p as any).adjustment_percent || 0,
             totalAdjustment: (p as any).total_adjustment || 0,
+            fundPercent: (p as any).fund_percent || 0,
+            totalFundShared: (p as any).total_fund_shared || 0,
             totalSalary: p.total_salary,
             details,
           };
@@ -124,13 +126,20 @@ export class PayrollService {
       },
     });
 
-    const adjustmentMap = new Map<string, { percent: number; note: string }>();
+    const adjustmentMap = new Map<string, { percent: number; fundPercent: number; note: string }>();
     for (const adj of adjustments) {
       adjustmentMap.set(adj.user_id, {
         percent: adj.adjustment_percent,
+        fundPercent: (adj as any).fund_percent || 0,
         note: adj.note || '',
       });
     }
+
+    // Fetch weekly fund
+    const weeklyFundRecord = await this.prisma.weeklyFund.findUnique({
+      where: { start_date: startDbDate },
+    });
+    const weeklyFundAmount = weeklyFundRecord ? weeklyFundRecord.amount : 0;
 
     // Fetch system-wide configurations
     const rawNight22_24 = await this.prisma.getSetting('NIGHT_SHIFT_22_24_BONUS', '10000');
@@ -202,6 +211,25 @@ export class PayrollService {
         }
       }
 
+      // Ensure the assignment's work_date matches the shift's week_start_date week boundaries
+      const shiftWeekStart = assignment.shift.week_start_date;
+      if (shiftWeekStart) {
+        const [sh, sm] = (assignment.shift.start_time || '00:00').split(':').map(Number);
+        const cellDate = new Date(assignment.work_date);
+        cellDate.setHours(sh, sm, 0, 0);
+
+        const weekStart = new Date(shiftWeekStart);
+        weekStart.setHours(7, 0, 0, 0);
+
+        const weekEnd = new Date(shiftWeekStart);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        weekEnd.setHours(7, 0, 0, 0);
+
+        if (cellDate < weekStart || cellDate >= weekEnd) {
+          continue;
+        }
+      }
+
       const user = assignment.user;
       const log = assignment.attendance_logs?.[0];
 
@@ -223,6 +251,8 @@ export class PayrollService {
           totalOtherAllowance: 0,
           totalShiftReward: 0,
           totalSalary: 0,
+          fundPercent: 0,
+          totalFundShared: 0,
           details: [],
         });
       }
@@ -388,13 +418,19 @@ export class PayrollService {
 
     const result = Array.from(userPayrollMap.values());
     for (const payroll of result) {
-      const adj = adjustmentMap.get(payroll.userId) || { percent: 0, note: '' };
+      const adj = adjustmentMap.get(payroll.userId) || { percent: 0, fundPercent: 0, note: '' };
       payroll.adjustmentPercent = adj.percent;
+      payroll.fundPercent = adj.fundPercent;
+      
       const grossSalary = payroll.totalSalary;
       const baseSalaryForAdj = payroll.totalBaseSalary;
       const totalAdjustment = Math.round(baseSalaryForAdj * (adj.percent / 100));
+      
+      const totalFundShared = Math.round(weeklyFundAmount * (adj.fundPercent / 100));
+      payroll.totalFundShared = totalFundShared;
+
       payroll.totalAdjustment = totalAdjustment;
-      payroll.totalSalary = grossSalary + totalAdjustment;
+      payroll.totalSalary = grossSalary + totalAdjustment + totalFundShared;
       payroll.adjustmentNote = adj.note;
     }
 
@@ -584,6 +620,8 @@ export class PayrollService {
             total_shift_reward: record.totalShiftReward,
             adjustment_percent: record.adjustmentPercent || 0,
             total_adjustment: record.totalAdjustment || 0,
+            fund_percent: record.fundPercent || 0,
+            total_fund_shared: record.totalFundShared || 0,
             total_salary: record.totalSalary,
             details: record.details,
           },
@@ -620,7 +658,8 @@ export class PayrollService {
     userId: string;
     startDate: string;
     endDate: string;
-    adjustmentPercent: number;
+    adjustmentPercent?: number;
+    fundPercent?: number;
     note?: string;
   }) {
     const start = this.parseDateOnly(body.startDate);
@@ -637,6 +676,26 @@ export class PayrollService {
       throw new BadRequestException('Giai đoạn này đã chốt bảng lương. Không thể điều chỉnh.');
     }
 
+    const updateData: any = {};
+    if (body.adjustmentPercent !== undefined) {
+      updateData.adjustment_percent = Number(body.adjustmentPercent) || 0;
+    }
+    if (body.fundPercent !== undefined) {
+      updateData.fund_percent = Number(body.fundPercent) || 0;
+    }
+    if (body.note !== undefined) {
+      updateData.note = body.note || null;
+    }
+
+    const createData: any = {
+      user_id: body.userId,
+      start_date: start,
+      end_date: end,
+      adjustment_percent: Number(body.adjustmentPercent) || 0,
+      fund_percent: Number(body.fundPercent) || 0,
+      note: body.note || null,
+    };
+
     return this.prisma.payrollAdjustment.upsert({
       where: {
         user_id_start_date_end_date: {
@@ -645,16 +704,36 @@ export class PayrollService {
           end_date: end,
         },
       },
+      update: updateData,
+      create: createData,
+    });
+  }
+
+  async getWeeklyFund(startDateStr: string) {
+    const start = this.parseDateOnly(startDateStr);
+    return this.prisma.weeklyFund.findUnique({
+      where: { start_date: start },
+    });
+  }
+
+  async upsertWeeklyFund(body: { start_date: string; end_date: string; amount: number }) {
+    const start = this.parseDateOnly(body.start_date);
+    const end = this.parseDateOnly(body.end_date);
+
+    if (await this.prisma.isDateLocked(start)) {
+      throw new BadRequestException('Tuần này đã chốt bảng lương. Không thể chỉnh sửa quỹ.');
+    }
+
+    return this.prisma.weeklyFund.upsert({
+      where: { start_date: start },
       update: {
-        adjustment_percent: Number(body.adjustmentPercent) || 0,
-        note: body.note || null,
+        amount: Number(body.amount) || 0,
+        end_date: end,
       },
       create: {
-        user_id: body.userId,
         start_date: start,
         end_date: end,
-        adjustment_percent: Number(body.adjustmentPercent) || 0,
-        note: body.note || null,
+        amount: Number(body.amount) || 0,
       },
     });
   }

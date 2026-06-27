@@ -139,7 +139,8 @@ export class PayrollController {
       userId: string;
       startDate: string;
       endDate: string;
-      adjustmentPercent: number;
+      adjustmentPercent?: number;
+      fundPercent?: number;
       note?: string;
     },
   ) {
@@ -147,6 +148,29 @@ export class PayrollController {
       throw new Error('Missing userId, startDate or endDate');
     }
     return this.payrollService.upsertAdjustment(body);
+  }
+
+  @Get('weekly-fund')
+  async getWeeklyFund(@Query('start_date') startDate: string) {
+    if (!startDate) {
+      throw new Error('Missing start_date');
+    }
+    return this.payrollService.getWeeklyFund(startDate);
+  }
+
+  @Post('weekly-fund')
+  async upsertWeeklyFund(
+    @Body()
+    body: {
+      start_date: string;
+      end_date: string;
+      amount: number;
+    },
+  ) {
+    if (!body.start_date || !body.end_date) {
+      throw new Error('Missing start_date or end_date');
+    }
+    return this.payrollService.upsertWeeklyFund(body);
   }
 }
 

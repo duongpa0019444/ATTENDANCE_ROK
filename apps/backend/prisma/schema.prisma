@@ -200,6 +200,8 @@ model LockedPayroll {
   total_shift_reward   Float
   adjustment_percent   Float @default(0)
   total_adjustment     Float @default(0)
+  fund_percent         Float @default(0)
+  total_fund_shared    Float @default(0)
   total_salary        Float
   details             Json
 
@@ -225,6 +227,7 @@ model PayrollAdjustment {
   start_date         DateTime @db.Date
   end_date           DateTime @db.Date
   adjustment_percent Float    @default(0)
+  fund_percent       Float    @default(0)
   note               String?
   created_at         DateTime @default(now())
 
@@ -232,4 +235,14 @@ model PayrollAdjustment {
 
   @@unique([user_id, start_date, end_date])
   @@map("payroll_adjustments")
+}
+
+model WeeklyFund {
+  id         String   @id @default(uuid())
+  start_date DateTime @unique @db.Date
+  end_date   DateTime @db.Date
+  amount     Float    @default(0)
+  created_at DateTime @default(now())
+
+  @@map("weekly_funds")
 }
