@@ -217,7 +217,7 @@ export default function StaffPayrollPage() {
                       : 'text-slate-400'
                   }`}>
                     {payrollData.adjustmentPercent && payrollData.adjustmentPercent > 0 ? '+' : ''}
-                    {formatVND(Math.round(payrollData.totalBaseSalary * (payrollData.adjustmentPercent / 100)))}
+                    {formatVND(Math.round(payrollData.totalBaseSalary * ((payrollData.adjustmentPercent || 0) / 100)))}
                   </div>
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
