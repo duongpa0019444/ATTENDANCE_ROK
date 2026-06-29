@@ -126,11 +126,12 @@ export class PayrollService {
       },
     });
 
-    const adjustmentMap = new Map<string, { percent: number; fundPercent: number; note: string }>();
+    const adjustmentMap = new Map<string, { percent: number; fundPercent: number; amount: number; note: string }>();
     for (const adj of adjustments) {
       adjustmentMap.set(adj.user_id, {
         percent: adj.adjustment_percent,
         fundPercent: (adj as any).fund_percent || 0,
+        amount: (adj as any).adjustment_amount || 0,
         note: adj.note || '',
       });
     }
@@ -418,13 +419,14 @@ export class PayrollService {
 
     const result = Array.from(userPayrollMap.values());
     for (const payroll of result) {
-      const adj = adjustmentMap.get(payroll.userId) || { percent: 0, fundPercent: 0, note: '' };
+      const adj = adjustmentMap.get(payroll.userId) || { percent: 0, fundPercent: 0, amount: 0, note: '' };
       payroll.adjustmentPercent = adj.percent;
       payroll.fundPercent = adj.fundPercent;
+      payroll.adjustmentAmount = adj.amount;
       
       const grossSalary = payroll.totalSalary;
       const baseSalaryForAdj = payroll.totalBaseSalary;
-      const totalAdjustment = Math.round(baseSalaryForAdj * (adj.percent / 100));
+      const totalAdjustment = Math.round(baseSalaryForAdj * (adj.percent / 100)) + adj.amount;
       
       const totalFundShared = Math.round(weeklyFundAmount * (adj.fundPercent / 100));
       payroll.totalFundShared = totalFundShared;
@@ -660,6 +662,7 @@ export class PayrollService {
     endDate: string;
     adjustmentPercent?: number;
     fundPercent?: number;
+    adjustmentAmount?: number;
     note?: string;
   }) {
     const start = this.parseDateOnly(body.startDate);
@@ -679,6 +682,9 @@ export class PayrollService {
     const updateData: any = {};
     if (body.adjustmentPercent !== undefined) {
       updateData.adjustment_percent = Number(body.adjustmentPercent) || 0;
+    }
+    if (body.adjustmentAmount !== undefined) {
+      updateData.adjustment_amount = Number(body.adjustmentAmount) || 0;
     }
     if (body.fundPercent !== undefined) {
       const newFundPercent = Number(body.fundPercent) || 0;
@@ -711,6 +717,7 @@ export class PayrollService {
       end_date: end,
       adjustment_percent: Number(body.adjustmentPercent) || 0,
       fund_percent: Number(body.fundPercent) || 0,
+      adjustment_amount: Number(body.adjustmentAmount) || 0,
       note: body.note || null,
     };
 

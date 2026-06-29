@@ -181,7 +181,7 @@ export default function StaffPayrollPage() {
               </Card>
 
               {/* Salary breakdown cards grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                   <div className="text-slate-400 text-[10px] font-mono leading-none">LƯƠNG CƠ BẢN</div>
                   <div className="text-sm sm:text-base font-bold text-slate-200">{formatVND(payrollData.totalBaseSalary)}</div>
@@ -210,14 +210,27 @@ export default function StaffPayrollPage() {
                     THƯỞNG/PHẠT {payrollData.adjustmentPercent ? `(${payrollData.adjustmentPercent > 0 ? '+' : ''}${payrollData.adjustmentPercent}%)` : '(0%)'}
                   </div>
                   <div className={`text-sm sm:text-base font-bold ${
-                    (payrollData.totalAdjustment || 0) > 0
+                    (payrollData.adjustmentPercent || 0) > 0
                       ? 'text-emerald-400'
-                      : (payrollData.totalAdjustment || 0) < 0
+                      : (payrollData.adjustmentPercent || 0) < 0
                       ? 'text-red-400'
                       : 'text-slate-400'
                   }`}>
-                    {payrollData.totalAdjustment && payrollData.totalAdjustment > 0 ? '+' : ''}
-                    {formatVND(payrollData.totalAdjustment || 0)}
+                    {payrollData.adjustmentPercent && payrollData.adjustmentPercent > 0 ? '+' : ''}
+                    {formatVND(Math.round(payrollData.totalBaseSalary * (payrollData.adjustmentPercent / 100)))}
+                  </div>
+                </Card>
+                <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
+                  <div className="text-slate-400 text-[10px] font-mono leading-none">CỘNG THÊM VND</div>
+                  <div className={`text-sm sm:text-base font-bold ${
+                    ((payrollData as any).adjustmentAmount || 0) > 0
+                      ? 'text-emerald-400'
+                      : ((payrollData as any).adjustmentAmount || 0) < 0
+                      ? 'text-red-400'
+                      : 'text-slate-400'
+                  }`}>
+                    {(payrollData as any).adjustmentAmount && (payrollData as any).adjustmentAmount > 0 ? '+' : ''}
+                    {formatVND((payrollData as any).adjustmentAmount || 0)}
                   </div>
                   {payrollData.adjustmentNote && (
                     <div className="text-[9px] text-slate-500 truncate" title={payrollData.adjustmentNote}>

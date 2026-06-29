@@ -141,6 +141,7 @@ export class PayrollController {
       endDate: string;
       adjustmentPercent?: number;
       fundPercent?: number;
+      adjustmentAmount?: number;
       note?: string;
     },
   ) {

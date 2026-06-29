@@ -198,6 +198,7 @@ export default function PayrollPage() {
   const [adjustingStaff, setAdjustingStaff] = useState<PayrollRecord | null>(null);
   const [adjustmentPercentInput, setAdjustmentPercentInput] = useState<string>('');
   const [fundPercentInput, setFundPercentInput] = useState<string>('0');
+  const [adjustmentAmountInput, setAdjustmentAmountInput] = useState<string>('0');
   const [adjustmentNoteInput, setAdjustmentNoteInput] = useState<string>('');
   const [isSavingAdjustment, setIsSavingAdjustment] = useState<boolean>(false);
   const [adjustmentMessage, setAdjustmentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -638,6 +639,7 @@ export default function PayrollPage() {
           endDate,
           adjustmentPercent: parseFloat(adjustmentPercentInput) || 0,
           fundPercent: parseFloat(fundPercentInput) || 0,
+          adjustmentAmount: parseFormattedNumber(adjustmentAmountInput),
           note: adjustmentNoteInput.trim() || null,
         }),
       });
@@ -646,6 +648,7 @@ export default function PayrollPage() {
         setAdjustingStaff(null);
         setAdjustmentPercentInput('');
         setFundPercentInput('0');
+        setAdjustmentAmountInput('0');
         setAdjustmentNoteInput('');
         setAdjustmentMessage(null);
         fetchPayroll();
@@ -670,10 +673,12 @@ export default function PayrollPage() {
   const exportToCSV = () => {
     // UTF-8 BOM to make sure Excel handles Vietnamese characters correctly
     let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-    csvContent += 'Nhân Viên,Vai Trò,Tổng Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Phụ Cấp Khác,% Chia Quỹ,Tiền Chia Quỹ,Thưởng Phạt (%),Tiền Thưởng Phạt,Thực Nhận (VND)\n';
+    csvContent += 'Nhân Viên,Số Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Phụ Cấp Khác,Quỹ Thưởng (%),Tiền Quỹ Thưởng,Thưởng/Phạt (%),Tiền Thưởng/Phạt,Cộng Thêm,Thực Nhận\n';
  
     payrollData.forEach((row) => {
-      csvContent += `"${row.fullName}","${row.role}",${row.completedShifts},${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.totalOtherAllowance},${row.fundPercent || 0},${row.totalFundShared || 0},${row.adjustmentPercent || 0},${row.totalAdjustment || 0},${row.totalSalary}\n`;
+      const pctMoney = Math.round(row.totalBaseSalary * ((row.adjustmentPercent || 0) / 100));
+      const flatAmount = (row as any).adjustmentAmount || 0;
+      csvContent += `"${row.fullName}","=""${row.completedShifts} / ${row.totalShifts}""",${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.totalOtherAllowance},${row.fundPercent || 0},${row.totalFundShared || 0},${row.adjustmentPercent || 0},${pctMoney},${flatAmount},${row.totalSalary}\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -685,10 +690,23 @@ export default function PayrollPage() {
     document.body.removeChild(link);
   };
 
-  // Helper formatting numbers to VND currency
-  // Output: 100.000đ (dot as thousand separator, đ suffix, no spaces)
   const formatVND = (value: number) => {
     return new Intl.NumberFormat('vi-VN').format(Math.round(value)) + 'đ';
+  };
+
+  const formatNumberWithCommas = (value: string) => {
+    if (!value) return '';
+    const clean = value.replace(/[^0-9-]/g, '');
+    if (!clean) return '';
+    const isNegative = clean.startsWith('-');
+    const digits = clean.replace(/-/g, '');
+    const formatted = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return isNegative ? `-${formatted}` : formatted;
+  };
+
+  const parseFormattedNumber = (value: string) => {
+    const clean = value.replace(/,/g, '');
+    return parseFloat(clean) || 0;
   };
 
   // Aggregated Summary values
@@ -697,7 +715,7 @@ export default function PayrollPage() {
   const averageShiftSalary = totalCompletedShifts > 0 ? totalPayrollCost / totalCompletedShifts : 0;
 
   const adjustmentPercentOptions = [];
-  for (let i = -100; i <= 100; i += 5) {
+  for (let i = -25; i <= 25; i += 5) {
     adjustmentPercentOptions.push({
       value: i,
       label: i > 0 ? `+${i}%` : `${i}%`,
@@ -986,6 +1004,7 @@ export default function PayrollPage() {
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP KHÁC</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">QUỸ THƯỞNG(%)</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">THƯỞNG/PHẠT (%)</TableHead>
+                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">CỘNG THÊM</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right font-bold text-cyan-400">THỰC NHẬN</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
                       </TableRow>
@@ -1027,11 +1046,20 @@ export default function PayrollPage() {
                             <span className={staff.adjustmentPercent && staff.adjustmentPercent !== 0 ? (staff.adjustmentPercent > 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold') : 'text-slate-400'}>
                               {staff.adjustmentPercent && staff.adjustmentPercent > 0 ? `+${staff.adjustmentPercent}%` : staff.adjustmentPercent && staff.adjustmentPercent < 0 ? `${staff.adjustmentPercent}%` : '0%'}
                             </span>
-                            {staff.totalAdjustment && staff.totalAdjustment !== 0 ? (
-                              <span className={`text-[10px] block ${staff.totalAdjustment > 0 ? 'text-emerald-400/80' : 'text-red-400/80'}`}>
-                                {staff.totalAdjustment > 0 ? '+' : ''}{formatVND(staff.totalAdjustment)}
+                            {staff.adjustmentPercent && staff.adjustmentPercent !== 0 ? (
+                              <span className={`text-[10px] block ${staff.adjustmentPercent > 0 ? 'text-emerald-400/80' : 'text-red-400/80'}`}>
+                                {staff.adjustmentPercent > 0 ? '+' : ''}{formatVND(Math.round(staff.totalBaseSalary * (staff.adjustmentPercent / 100)))}
                               </span>
                             ) : null}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-slate-200">
+                            {(staff as any).adjustmentAmount && (staff as any).adjustmentAmount !== 0 ? (
+                              <span className={(staff as any).adjustmentAmount > 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
+                                {(staff as any).adjustmentAmount > 0 ? '+' : ''}{formatVND((staff as any).adjustmentAmount)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">0đ</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-mono font-bold text-emerald-400">{formatVND(staff.totalSalary)}</TableCell>
                           <TableCell className="text-right">
@@ -1054,6 +1082,7 @@ export default function PayrollPage() {
                                     setAdjustingStaff(staff);
                                     setAdjustmentPercentInput(staff.adjustmentPercent ? String(staff.adjustmentPercent) : '0');
                                     setFundPercentInput(staff.fundPercent ? String(staff.fundPercent) : '0');
+                                    setAdjustmentAmountInput((staff as any).adjustmentAmount ? formatNumberWithCommas(String((staff as any).adjustmentAmount)) : '0');
                                     setAdjustmentNoteInput(staff.adjustmentNote || '');
                                     setAdjustmentMessage(null);
                                     setIsAdjustmentDialogOpen(true);
@@ -1655,6 +1684,26 @@ export default function PayrollPage() {
                 * Tỷ lệ phần trăm được hưởng từ Quỹ tuần. Cho phép nhập số thập phân.
               </p>
             </div>
+            <div className="space-y-1 pb-2">
+              <label className="text-[10px] text-slate-400 font-mono">SỐ TIỀN CỘNG THÊM (VND)</label>
+              <Input
+                type="text"
+                value={adjustmentAmountInput}
+                onChange={(e) => {
+                  let val = e.target.value;
+                  val = val.replace(/[^0-9-]/g, '');
+                  if (val.indexOf('-') > 0) {
+                    val = val.replace(/-/g, '');
+                  }
+                  setAdjustmentAmountInput(formatNumberWithCommas(val));
+                }}
+                placeholder="Nhập số tiền VND (VD: 100,000 hoặc -50,000)"
+                className="bg-slate-950/40 border-slate-800 text-slate-100 text-xs focus-visible:ring-cyan-500/20"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                * Nhập số dương để thưởng thêm, số âm (có dấu - ở trước) để phạt giảm trừ trực tiếp. Tự động hiển thị dấu phẩy phân cách phần nghìn.
+              </p>
+            </div>
             
             <div className="space-y-1">
               <label className="text-[10px] text-slate-400 font-mono">GHI CHÚ THƯỞNG PHẠT</label>
@@ -1715,7 +1764,7 @@ export default function PayrollPage() {
           <div className="space-y-4 pt-2">
 
             {/* Staff Mini Stat block */}
-            <div className="grid grid-cols-2 sm:grid-cols-7 gap-3 p-3 bg-slate-950/40 border border-slate-800 rounded-lg text-xs leading-relaxed">
+            <div className="grid grid-cols-2 sm:grid-cols-8 gap-3 p-3 bg-slate-950/40 border border-slate-800 rounded-lg text-xs leading-relaxed">
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Số Ca Hoàn Thành</span>
                 <strong className="text-sm sm:text-base text-cyan-400">{selectedStaff?.completedShifts} / {selectedStaff?.totalShifts}</strong>
@@ -1741,9 +1790,15 @@ export default function PayrollPage() {
               </div>
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Thưởng/Phạt %</span>
-                <strong className={`text-sm sm:text-base ${selectedStaff?.totalAdjustment && selectedStaff.totalAdjustment > 0 ? 'text-emerald-400' : selectedStaff?.totalAdjustment && selectedStaff.totalAdjustment < 0 ? 'text-red-400' : 'text-slate-400'}`}>
+                <strong className={`text-sm sm:text-base ${selectedStaff?.adjustmentPercent && selectedStaff.adjustmentPercent > 0 ? 'text-emerald-400' : selectedStaff?.adjustmentPercent && selectedStaff.adjustmentPercent < 0 ? 'text-red-400' : 'text-slate-400'}`}>
                   {selectedStaff?.adjustmentPercent ? `${selectedStaff.adjustmentPercent > 0 ? '+' : ''}${selectedStaff.adjustmentPercent}%` : '0%'}
-                  {selectedStaff?.totalAdjustment ? ` (${selectedStaff.totalAdjustment > 0 ? '+' : ''}${formatVND(selectedStaff.totalAdjustment)})` : ''}
+                  {selectedStaff?.adjustmentPercent ? ` (${selectedStaff.adjustmentPercent > 0 ? '+' : ''}${formatVND(Math.round(selectedStaff.totalBaseSalary * (selectedStaff.adjustmentPercent / 100)))})` : ''}
+                </strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Cộng thêm VND</span>
+                <strong className={`text-sm sm:text-base ${(selectedStaff as any)?.adjustmentAmount && (selectedStaff as any).adjustmentAmount > 0 ? 'text-emerald-400' : (selectedStaff as any)?.adjustmentAmount && (selectedStaff as any).adjustmentAmount < 0 ? 'text-red-400' : 'text-slate-400'}`}>
+                  {(selectedStaff as any)?.adjustmentAmount ? `${(selectedStaff as any).adjustmentAmount > 0 ? '+' : ''}${formatVND((selectedStaff as any).adjustmentAmount)}` : '0đ'}
                 </strong>
               </div>
               <div>
