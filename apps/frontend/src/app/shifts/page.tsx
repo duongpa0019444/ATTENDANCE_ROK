@@ -357,18 +357,20 @@ export default function ShiftsPage() {
           return;
         }
 
-        const weekStartDateStr = dateCols[0].dateStr;
+        // Always use the Monday of the currently selected week on the UI
+        const weekStartDateStr = format(selectedDate, 'yyyy-MM-dd');
         
         // 2. Kiểm tra lệch tuần giữa Excel và tuần đang chọn trên hệ thống
-        const currentSelectedStartStr = format(selectedDate, 'yyyy-MM-dd');
-        if (weekStartDateStr !== currentSelectedStartStr) {
-          const parsedExcelStart = parseISO(weekStartDateStr);
-          const confirmMsg = `Cảnh báo:\nTuần bắt đầu trong file Excel (${format(parsedExcelStart, 'dd/MM/yyyy')}) không trùng khớp với Tuần đang chọn trên hệ thống (${format(selectedDate, 'dd/MM/yyyy')}).\n\nBạn có chắc chắn muốn tiếp tục nhập lịch cho tuần ngày ${format(parsedExcelStart, 'dd/MM/yyyy')} không?`;
-          if (!window.confirm(confirmMsg)) {
-            setIsImporting(false);
-            return;
-          }
-        }
+        // 2. Lọc chỉ giữ các cột ngày thuộc tuần đang chọn (Thứ 2 → Chủ nhật)
+        const weekStart = selectedDate; // Monday
+        const weekEnd = new Date(selectedDate);
+        weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
+        const weekEndStr = format(weekEnd, 'yyyy-MM-dd');
+
+        // Calculate next Monday to define the cycle bounds
+        const nextMonday = new Date(selectedDate);
+        nextMonday.setDate(nextMonday.getDate() + 7);
+        const nextMondayStr = format(nextMonday, 'yyyy-MM-dd');
 
         const parsedAssignments: Array<{
           serverName: string;
@@ -378,6 +380,7 @@ export default function ShiftsPage() {
           excelNames: string[];
         }> = [];
         const uniqueNamesInExcel = new Set<string>();
+        const skippedDateTimes = new Set<string>();
 
         for (let r = 1; r < rows.length; r++) {
           const row = rows[r];
@@ -411,17 +414,35 @@ export default function ShiftsPage() {
                 .split(/[,/+\n]/)
                 .map(n => n.replace(/\([^)]*\)/g, '').trim())
                 .filter(Boolean);
-              nameList.forEach(n => uniqueNamesInExcel.add(n));
 
-              parsedAssignments.push({
-                serverName,
-                shiftName,
-                startTime: timeCell,
-                workDateStr: dateStr,
-                excelNames: nameList,
-              });
+              // Cycle check: from 07:00 Monday to 06:59 next Monday
+              const isAfterStart = (dateStr > weekStartDateStr) || (dateStr === weekStartDateStr && timeCell >= '07:00');
+              const isBeforeEnd = (dateStr < nextMondayStr) || (dateStr === nextMondayStr && timeCell < '07:00');
+
+              if (isAfterStart && isBeforeEnd) {
+                nameList.forEach(n => uniqueNamesInExcel.add(n));
+                parsedAssignments.push({
+                  serverName,
+                  shiftName,
+                  startTime: timeCell,
+                  workDateStr: dateStr,
+                  excelNames: nameList,
+                });
+              } else {
+                skippedDateTimes.add(`${format(parseISO(dateStr), 'dd/MM/yyyy')} ca ${timeCell}`);
+              }
             }
           });
+        }
+
+        if (skippedDateTimes.size > 0) {
+          alert(`Lưu ý: Trong file Excel có lịch không thuộc chu kỳ tuần đang chọn (Từ 07:00 Thứ 2 đến 06:59 Thứ 2 tuần sau).\n\nCác ca bị bỏ qua: ${Array.from(skippedDateTimes).join(', ')}\n\nChỉ nhập các ca thuộc chu kỳ tuần hiện tại.`);
+        }
+
+        if (parsedAssignments.length === 0) {
+          alert('Không có lịch làm việc nào trong file Excel thuộc chu kỳ tuần đang chọn. Vui lòng chọn đúng tuần trước khi import.');
+          setIsImporting(false);
+          return;
         }
 
         const initialMap: Record<string, string> = {};

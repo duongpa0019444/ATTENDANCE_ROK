@@ -476,63 +476,64 @@ export class ShiftsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // ===== STEP 1: Delete ALL existing assignments for the entire week =====
-      // This ensures manually-created shifts not present in Excel are also removed.
-      const weekEndDate = new Date(weekStartDate);
-      weekEndDate.setDate(weekEndDate.getDate() + 8);
+      // ===== STEP 1: Delete ALL existing assignments on the imported dates within the current week's cycle =====
+      const uniqueWorkDates = Array.from(new Set(assignments.map(a => a.work_date))).map(d => new Date(d));
 
-      // Find all shifts for this week
-      const weekShifts = await tx.shift.findMany({
-        where: { week_start_date: weekStartDate },
-        select: { id: true },
+      const allDateAssignments = await tx.shiftAssignment.findMany({
+        where: {
+          work_date: { in: uniqueWorkDates },
+        },
+        include: {
+          shift: true,
+        },
       });
-      const weekShiftIds = weekShifts.map(s => s.id);
 
-      if (weekShiftIds.length > 0) {
-        // Find all assignments for these shifts within the week date range
-        const allWeekAssignments = await tx.shiftAssignment.findMany({
-          where: {
-            shift_id: { in: weekShiftIds },
-            work_date: {
-              gte: weekStartDate,
-              lt: weekEndDate,
-            },
-          },
+      // Filter to only delete assignments within the current week's cycle bounds
+      const nextMondayDate = new Date(weekStartDate);
+      nextMondayDate.setDate(nextMondayDate.getDate() + 7);
+      const nextMondayStr = nextMondayDate.toISOString().split('T')[0];
+      const weekStartDateStr = week_start_date; // e.g. '2026-06-29'
+
+      const assignmentsToDelete = allDateAssignments.filter(a => {
+        const dateStr = a.work_date.toISOString().split('T')[0];
+        const startTime = a.shift?.start_time || '00:00';
+        const isAfterStart = (dateStr > weekStartDateStr) || (dateStr === weekStartDateStr && startTime >= '07:00');
+        const isBeforeEnd = (dateStr < nextMondayStr) || (dateStr === nextMondayStr && startTime < '07:00');
+        return isAfterStart && isBeforeEnd;
+      });
+
+      const allAssignmentIds = assignmentsToDelete.map(a => a.id);
+      const affectedShiftIds = [...new Set(assignmentsToDelete.map(a => a.shift_id))];
+
+      if (allAssignmentIds.length > 0) {
+        // Delete escalation logs
+        const allLogs = await tx.attendanceLog.findMany({
+          where: { shift_assignment_id: { in: allAssignmentIds } },
           select: { id: true },
         });
-        const allAssignmentIds = allWeekAssignments.map(a => a.id);
-
-        if (allAssignmentIds.length > 0) {
-          // Delete escalation logs
-          const allLogs = await tx.attendanceLog.findMany({
-            where: { shift_assignment_id: { in: allAssignmentIds } },
-            select: { id: true },
-          });
-          const allLogIds = allLogs.map(l => l.id);
-          if (allLogIds.length > 0) {
-            await tx.escalationLog.deleteMany({
-              where: { attendance_id: { in: allLogIds } },
-            });
-          }
-          // Delete attendance logs
-          await tx.attendanceLog.deleteMany({
-            where: { shift_assignment_id: { in: allAssignmentIds } },
-          });
-          // Delete all assignments
-          await tx.shiftAssignment.deleteMany({
-            where: { id: { in: allAssignmentIds } },
+        const allLogIds = allLogs.map(l => l.id);
+        if (allLogIds.length > 0) {
+          await tx.escalationLog.deleteMany({
+            where: { attendance_id: { in: allLogIds } },
           });
         }
+        // Delete attendance logs
+        await tx.attendanceLog.deleteMany({
+          where: { shift_assignment_id: { in: allAssignmentIds } },
+        });
+        // Delete all assignments
+        await tx.shiftAssignment.deleteMany({
+          where: { id: { in: allAssignmentIds } },
+        });
+      }
 
-        // Delete shifts that are now orphaned (no assignments left and not referenced in Excel)
-        // We'll delete all old shifts for the week; new ones will be created from Excel below
-        for (const shiftId of weekShiftIds) {
-          const remainingAssignments = await tx.shiftAssignment.count({
-            where: { shift_id: shiftId },
-          });
-          if (remainingAssignments === 0) {
-            await tx.shift.delete({ where: { id: shiftId } });
-          }
+      // Delete shifts that are now orphaned (no assignments left)
+      for (const shiftId of affectedShiftIds) {
+        const remainingAssignments = await tx.shiftAssignment.count({
+          where: { shift_id: shiftId },
+        });
+        if (remainingAssignments === 0) {
+          await tx.shift.delete({ where: { id: shiftId } });
         }
       }
 
