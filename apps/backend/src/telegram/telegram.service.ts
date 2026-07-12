@@ -135,10 +135,10 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
-  async sendMessage(chatId: string, message: string) {
+  async sendMessage(chatId: string, message: string, options?: any) {
     if (!this.bot) return;
     try {
-      await this.bot.telegram.sendMessage(chatId, message);
+      await this.bot.telegram.sendMessage(chatId, message, options);
     } catch (error) {
       this.logger.error(`Error sending telegram message to ${chatId}`, error);
     }
@@ -220,5 +220,37 @@ export class TelegramService implements OnModuleInit {
 
     await ctx.reply(`✅ Đã ghi nhận bạn sẵn sàng vào ca.`, Markup.removeKeyboard());
     await ctx.answerCbQuery();
+
+    // Notify admins/managers via Telegram
+    try {
+      const employee = updatedLog.shift_assignment.user;
+      const day = String(workDate.getUTCDate()).padStart(2, '0');
+      const month = String(workDate.getUTCMonth() + 1).padStart(2, '0');
+      const year = workDate.getUTCFullYear();
+      const dateStr = `${day}/${month}/${year}`;
+      const timeText = shift.end_time ? `${shift.start_time} - ${shift.end_time}` : shift.start_time;
+
+      const adminMessage = `✅ *XÁC NHẬN VÀO CA*\n\n` +
+        `👤 Nhân viên: *${employee.full_name}* (${employee.username})\n` +
+        `🖥️ Server/Ca: *${shiftDisplayName}*\n` +
+        `📅 Ngày làm: *${dateStr}*\n` +
+        `⏰ Giờ làm: *${timeText}*\n\n` +
+        `Đã xác nhận sẵn sàng vào ca qua Telegram.`;
+
+      const admins = await this.prisma.user.findMany({
+        where: {
+          role: { in: ['ADMIN', 'MANAGER'] },
+          telegram_id: { not: null },
+        },
+      });
+
+      for (const admin of admins) {
+        if (admin.telegram_id) {
+          await this.sendMessage(admin.telegram_id, adminMessage, { parse_mode: 'Markdown' });
+        }
+      }
+    } catch (err) {
+      this.logger.error('Error sending Telegram notification to admins', err);
+    }
   }
 }
