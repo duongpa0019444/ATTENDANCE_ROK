@@ -102,8 +102,13 @@ export class TelegramService implements OnModuleInit {
         await ctx.reply(`✅ Đã liên kết thành công tài khoản [${user.full_name}] với Telegram. Từ giờ bạn sẽ nhận thông báo ca làm tại đây.`);
       });
 
-      this.bot.launch();
-      this.logger.log('Telegram Bot started');
+      this.bot.launch()
+        .then(() => {
+          this.logger.log('Telegram Bot started successfully');
+        })
+        .catch((error) => {
+          this.logger.error('Failed to launch Telegram Bot:', error);
+        });
 
       // Graceful shutdown
       process.once('SIGINT', () => this.bot.stop('SIGINT'));
