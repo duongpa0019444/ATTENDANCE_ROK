@@ -41,6 +41,9 @@ services:
       REDIS_PORT: 6379
       PORT: 3002
       TZ: Asia/Ho_Chi_Minh
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
