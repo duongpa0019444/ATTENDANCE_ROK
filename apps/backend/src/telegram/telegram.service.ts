@@ -20,7 +20,12 @@ export class TelegramService implements OnModuleInit {
   onModuleInit() {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     if (token && token !== 'your_telegram_bot_token_here') {
-      this.bot = new Telegraf(token);
+      const apiRoot = this.configService.get<string>('TELEGRAM_API_ROOT') || 'https://api.telegram-proxy.org';
+      this.bot = new Telegraf(token, {
+        telegram: {
+          apiRoot,
+        },
+      });
 
       // Handle /start with deep-link token
       this.bot.start(async (ctx) => {
