@@ -36,8 +36,9 @@ services:
     container_name: attendance_backend
     env_file:
       - .env
+    network_mode: "host"
     environment:
-      REDIS_HOST: redis
+      REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
       PORT: 3002
       TZ: Asia/Ho_Chi_Minh
@@ -49,11 +50,7 @@ services:
     depends_on:
       - postgres
       - redis
-    ports:
-      - "127.0.0.1:3002:3002"
     restart: unless-stopped
-    networks:
-      - internal
   
   frontend:
     build:
