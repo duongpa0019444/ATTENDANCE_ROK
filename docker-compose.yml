@@ -49,11 +49,11 @@ services:
     depends_on:
       - postgres
       - redis
-    # ports:
-    #   - "127.0.0.1:3002:3002"
-    # restart: unless-stopped
-    # networks:
-    #   - internal
+    ports:
+      - "127.0.0.1:3002:3002"
+    restart: unless-stopped
+    networks:
+      - internal
   
   frontend:
     build:
