@@ -70,12 +70,26 @@ export class TelegramService implements OnModuleInit {
       // Handle shift confirmation actions
       this.bot.action(/confirm_shift_(.+)/, async (ctx) => {
         const shiftAssignmentId = ctx.match[1];
-        await this.handleReadyAction(ctx, shiftAssignmentId);
+        this.logger.log(`Received confirm_shift action for assignment: ${shiftAssignmentId} from chat ${ctx.chat.id}`);
+        try {
+          await this.handleReadyAction(ctx, shiftAssignmentId);
+        } catch (error) {
+          this.logger.error(`Error in confirm_shift action for assignment ${shiftAssignmentId}:`, error);
+          await ctx.reply('❌ Có lỗi xảy ra khi xác thực ca làm. Vui lòng thử lại.').catch(() => {});
+          await ctx.answerCbQuery().catch(() => {});
+        }
       });
 
       this.bot.action(/ready_shift_(.+)/, async (ctx) => {
         const shiftAssignmentId = ctx.match[1];
-        await this.handleReadyAction(ctx, shiftAssignmentId);
+        this.logger.log(`Received ready_shift action for assignment: ${shiftAssignmentId} from chat ${ctx.chat.id}`);
+        try {
+          await this.handleReadyAction(ctx, shiftAssignmentId);
+        } catch (error) {
+          this.logger.error(`Error in ready_shift action for assignment ${shiftAssignmentId}:`, error);
+          await ctx.reply('❌ Có lỗi xảy ra khi xác thực ca làm. Vui lòng thử lại.').catch(() => {});
+          await ctx.answerCbQuery().catch(() => {});
+        }
       });
 
       // Legacy text-based linking (fallback)
@@ -105,6 +119,11 @@ export class TelegramService implements OnModuleInit {
         });
 
         await ctx.reply(`✅ Đã liên kết thành công tài khoản [${user.full_name}] với Telegram. Từ giờ bạn sẽ nhận thông báo ca làm tại đây.`);
+      });
+
+      // Global error handler
+      this.bot.catch((err: any, ctx) => {
+        this.logger.error(`Telegram Bot encountered an error for update ${ctx.update.update_id}:`, err);
       });
 
       this.bot.launch()
@@ -157,6 +176,7 @@ export class TelegramService implements OnModuleInit {
   // --- Bot Action Helpers ---
 
   private async handleReadyAction(ctx: any, assignmentId: string) {
+    this.logger.log(`Processing ready/confirm status for assignment ID: ${assignmentId}`);
     const log = await this.prisma.attendanceLog.findFirst({
       where: { shift_assignment_id: assignmentId },
       include: { shift_assignment: { include: { user: true, shift: { include: { server: true } } } } }
