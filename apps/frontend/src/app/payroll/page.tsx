@@ -288,7 +288,20 @@ export default function PayrollPage() {
       const res = await apiFetch(`${API_URL}/payroll?start_date=${startDate}&end_date=${endDate}`);
       if (res.ok) {
         const data = await res.json();
-        setPayrollData(data);
+        const sortedData = Array.isArray(data)
+          ? [...data].sort((a, b) => {
+              const getNamePart = (fullName: string) => {
+                const afterDot = (fullName || '').trim().split('.').pop() || '';
+                return afterDot.trim().split(/\s+/).pop() || '';
+              };
+              const nameA = getNamePart(a.fullName);
+              const nameB = getNamePart(b.fullName);
+              const cmp = nameA.localeCompare(nameB, 'vi', { sensitivity: 'accent' });
+              if (cmp !== 0) return cmp;
+              return (a.fullName || '').localeCompare(b.fullName || '', 'vi', { sensitivity: 'accent' });
+            })
+          : [];
+        setPayrollData(sortedData);
       }
       try {
         const fundRes = await apiFetch(`${API_URL}/payroll/weekly-fund?start_date=${startDate}`);
