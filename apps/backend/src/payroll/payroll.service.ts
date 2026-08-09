@@ -126,12 +126,13 @@ export class PayrollService {
       },
     });
 
-    const adjustmentMap = new Map<string, { percent: number; fundPercent: number; amount: number; note: string }>();
+    const adjustmentMap = new Map<string, { percent: number; fundPercent: number; amount: number; otherAllowance: number; note: string }>();
     for (const adj of adjustments) {
       adjustmentMap.set(adj.user_id, {
         percent: adj.adjustment_percent,
         fundPercent: (adj as any).fund_percent || 0,
         amount: (adj as any).adjustment_amount || 0,
+        otherAllowance: (adj as any).other_allowance || 0,
         note: adj.note || '',
       });
     }
@@ -356,8 +357,8 @@ export class PayrollService {
           }
         }
 
-        // 4. Date-specific allowance
-        appliedOtherAllowance = allowanceByDate.get(this.formatDateOnly(assignment.work_date)) || 0;
+        // 4. Date-specific allowance (deprecated - set via adjustment per user)
+        appliedOtherAllowance = 0;
         
         shiftReward = 0;
         if (assignment.shift.bonus_salary > 0) {
@@ -419,10 +420,11 @@ export class PayrollService {
 
     const result = Array.from(userPayrollMap.values());
     for (const payroll of result) {
-      const adj = adjustmentMap.get(payroll.userId) || { percent: 0, fundPercent: 0, amount: 0, note: '' };
+      const adj = adjustmentMap.get(payroll.userId) || { percent: 0, fundPercent: 0, amount: 0, otherAllowance: 0, note: '' };
       payroll.adjustmentPercent = adj.percent;
       payroll.fundPercent = adj.fundPercent;
       payroll.adjustmentAmount = adj.amount;
+      payroll.totalOtherAllowance = adj.otherAllowance;
       
       const grossSalary = payroll.totalSalary;
       const baseSalaryForAdj = payroll.totalBaseSalary;
@@ -432,7 +434,7 @@ export class PayrollService {
       payroll.totalFundShared = totalFundShared;
 
       payroll.totalAdjustment = totalAdjustment;
-      payroll.totalSalary = grossSalary + totalAdjustment + totalFundShared;
+      payroll.totalSalary = grossSalary + totalAdjustment + totalFundShared + adj.otherAllowance;
       payroll.adjustmentNote = adj.note;
     }
 
@@ -663,6 +665,7 @@ export class PayrollService {
     adjustmentPercent?: number;
     fundPercent?: number;
     adjustmentAmount?: number;
+    otherAllowance?: number;
     note?: string;
   }) {
     const start = this.parseDateOnly(body.startDate);
@@ -685,6 +688,9 @@ export class PayrollService {
     }
     if (body.adjustmentAmount !== undefined) {
       updateData.adjustment_amount = Number(body.adjustmentAmount) || 0;
+    }
+    if (body.otherAllowance !== undefined) {
+      updateData.other_allowance = Number(body.otherAllowance) || 0;
     }
     if (body.fundPercent !== undefined) {
       const newFundPercent = Number(body.fundPercent) || 0;
@@ -718,6 +724,7 @@ export class PayrollService {
       adjustment_percent: Number(body.adjustmentPercent) || 0,
       fund_percent: Number(body.fundPercent) || 0,
       adjustment_amount: Number(body.adjustmentAmount) || 0,
+      other_allowance: Number(body.otherAllowance) || 0,
       note: body.note || null,
     };
 

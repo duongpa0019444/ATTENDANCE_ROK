@@ -229,6 +229,7 @@ model PayrollAdjustment {
   adjustment_percent Float    @default(0)
   fund_percent       Float    @default(0)
   adjustment_amount  Float    @default(0)
+  other_allowance    Float    @default(0)
   note               String?
   created_at         DateTime @default(now())
 

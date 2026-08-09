@@ -199,6 +199,7 @@ export default function PayrollPage() {
   const [adjustmentPercentInput, setAdjustmentPercentInput] = useState<string>('');
   const [fundPercentInput, setFundPercentInput] = useState<string>('0');
   const [adjustmentAmountInput, setAdjustmentAmountInput] = useState<string>('0');
+  const [otherAllowanceInput, setOtherAllowanceInput] = useState<string>('0');
   const [adjustmentNoteInput, setAdjustmentNoteInput] = useState<string>('');
   const [isSavingAdjustment, setIsSavingAdjustment] = useState<boolean>(false);
   const [adjustmentMessage, setAdjustmentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -653,6 +654,7 @@ export default function PayrollPage() {
           adjustmentPercent: parseFloat(adjustmentPercentInput) || 0,
           fundPercent: parseFloat(fundPercentInput) || 0,
           adjustmentAmount: parseFormattedNumber(adjustmentAmountInput),
+          otherAllowance: parseFormattedNumber(otherAllowanceInput),
           note: adjustmentNoteInput.trim() || null,
         }),
       });
@@ -662,6 +664,7 @@ export default function PayrollPage() {
         setAdjustmentPercentInput('');
         setFundPercentInput('0');
         setAdjustmentAmountInput('0');
+        setOtherAllowanceInput('0');
         setAdjustmentNoteInput('');
         setAdjustmentMessage(null);
         fetchPayroll();
@@ -1096,6 +1099,7 @@ export default function PayrollPage() {
                                     setAdjustmentPercentInput(staff.adjustmentPercent ? String(staff.adjustmentPercent) : '0');
                                     setFundPercentInput(staff.fundPercent ? String(staff.fundPercent) : '0');
                                     setAdjustmentAmountInput((staff as any).adjustmentAmount ? formatNumberWithCommas(String((staff as any).adjustmentAmount)) : '0');
+                                    setOtherAllowanceInput(staff.totalOtherAllowance ? formatNumberWithCommas(String(staff.totalOtherAllowance)) : '0');
                                     setAdjustmentNoteInput(staff.adjustmentNote || '');
                                     setAdjustmentMessage(null);
                                     setIsAdjustmentDialogOpen(true);
@@ -1307,99 +1311,6 @@ export default function PayrollPage() {
 
             {/* Server and Shift settings lists */}
             <div className="lg:col-span-2 space-y-6">
-              <Card className="bg-slate-900/40 border-slate-855 backdrop-blur-xl">
-                <CardHeader>
-                  <CardTitle className="text-base text-slate-200 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-cyan-400" />
-                    Phụ Cấp Theo Ngày
-                  </CardTitle>
-                  <CardDescription className="text-slate-400 text-xs">
-                    Chỉ nhân sự được phân ca vào đúng ngày này mới được cộng phụ cấp.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <form onSubmit={handleSaveAllowance} className="grid grid-cols-1 md:grid-cols-[150px_160px_1fr_auto] gap-3 items-end">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-mono">NGÀY</label>
-                      <Input
-                        type="date"
-                        value={allowanceDateInput}
-                        onChange={(e) => setAllowanceDateInput(e.target.value)}
-                        required
-                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-mono">SỐ TIỀN</label>
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        value={allowanceAmountInput ? new Intl.NumberFormat('vi-VN').format(Number(allowanceAmountInput)) : ''}
-                        onChange={(e) => {
-                          const raw = parseInt(e.target.value.replace(/\./g, '').replace(/,/g, ''), 10);
-                          setAllowanceAmountInput(isNaN(raw) ? '' : String(raw));
-                        }}
-                        required
-                        className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-mono">GHI CHÚ</label>
-                      <Input
-                        value={allowanceNoteInput}
-                        onChange={(e) => setAllowanceNoteInput(e.target.value)}
-                        placeholder="VD: Tết, lễ 30/4..."
-                        className="bg-slate-950/40 border-slate-800 text-slate-100 text-xs focus-visible:ring-cyan-500/20"
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      disabled={isSavingAllowance}
-                      className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs h-9 rounded"
-                    >
-                      {isSavingAllowance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Lưu'}
-                    </Button>
-                  </form>
-
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader className="border-slate-850">
-                        <TableRow className="border-slate-850 hover:bg-transparent">
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase">NGÀY</TableHead>
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase">GHI CHÚ</TableHead>
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP</TableHead>
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {payrollAllowances.map((allowance) => (
-                          <TableRow key={allowance.id} className="border-slate-850">
-                            <TableCell className="font-mono text-xs text-slate-200">
-                              {formatDateVi(allowance.work_date)}
-                            </TableCell>
-                            <TableCell className="text-xs text-slate-300">
-                              {allowance.note || '-'}
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-slate-200">
-                              {formatVND(allowance.amount)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                type="button"
-                                onClick={() => handleDeleteAllowance(allowance.id)}
-                                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-400 h-7 px-2.5 rounded text-[11px]"
-                              >
-                                Xóa
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Server base salaries table */}
               <Card className="bg-slate-900/40 border-slate-855 backdrop-blur-xl">
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -1715,6 +1626,27 @@ export default function PayrollPage() {
               />
               <p className="text-[10px] text-slate-500 mt-1">
                 * Nhập số dương để thưởng thêm, số âm (có dấu - ở trước) để phạt giảm trừ trực tiếp. Tự động hiển thị dấu phẩy phân cách phần nghìn.
+              </p>
+            </div>
+
+            <div className="space-y-1 pb-2">
+              <label className="text-[10px] text-slate-400 font-mono">PHỤ CẤP KHÁC (VND)</label>
+              <Input
+                type="text"
+                value={otherAllowanceInput}
+                onChange={(e) => {
+                  let val = e.target.value;
+                  val = val.replace(/[^0-9-]/g, '');
+                  if (val.indexOf('-') > 0) {
+                    val = val.replace(/-/g, '');
+                  }
+                  setOtherAllowanceInput(formatNumberWithCommas(val));
+                }}
+                placeholder="Nhập số tiền phụ cấp khác VND (VD: 200,000)"
+                className="bg-slate-950/40 border-slate-800 text-slate-100 text-xs focus-visible:ring-cyan-500/20"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                * Nhập số tiền phụ cấp khác dành cho nhân sự này trong tuần/kỳ lương.
               </p>
             </div>
             
