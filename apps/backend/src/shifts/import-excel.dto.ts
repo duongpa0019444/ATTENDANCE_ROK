@@ -9,4 +9,5 @@ export class ImportAssignmentDto {
 export class ImportExcelDto {
   week_start_date: string; // "yyyy-MM-dd"
   assignments: ImportAssignmentDto[];
+  file_name?: string;
 }

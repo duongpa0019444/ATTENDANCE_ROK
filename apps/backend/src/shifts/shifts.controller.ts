@@ -19,28 +19,28 @@ export class ShiftsController {
   }
 
   @Post('clone-week')
-  cloneWeek(@Body() body: { from_week: string; to_week: string }) {
-    return this.shiftsService.cloneWeek(body.from_week, body.to_week);
+  cloneWeek(@Request() req: any, @Body() body: { from_week: string; to_week: string }) {
+    return this.shiftsService.cloneWeek(body.from_week, body.to_week, req.user?.userId);
   }
 
   @Post('import-excel')
-  importExcel(@Body() dto: ImportExcelDto) {
-    return this.shiftsService.importExcel(dto);
+  importExcel(@Request() req: any, @Body() dto: ImportExcelDto) {
+    return this.shiftsService.importExcel(dto, req.user?.userId);
   }
 
   @Post()
-  createShift(@Body() data: any) {
-    return this.shiftsService.createShift(data);
+  createShift(@Request() req: any, @Body() data: any) {
+    return this.shiftsService.createShift(data, req.user?.userId);
   }
 
   @Put(':id')
-  updateShift(@Param('id') id: string, @Body() data: any) {
-    return this.shiftsService.updateShift(id, data);
+  updateShift(@Request() req: any, @Param('id') id: string, @Body() data: any) {
+    return this.shiftsService.updateShift(id, data, req.user?.userId);
   }
 
   @Delete(':id')
-  removeShift(@Param('id') id: string) {
-    return this.shiftsService.removeShift(id);
+  removeShift(@Request() req: any, @Param('id') id: string) {
+    return this.shiftsService.removeShift(id, req.user?.userId);
   }
 
   @Get('assignments')
@@ -64,22 +64,22 @@ export class ShiftsController {
   }
 
   @Post('sync-assignments')
-  syncAssignments(@Body() data: { shift_id: string; work_date: string; user_ids: string[] }) {
-    return this.shiftsService.syncAssignments(data);
+  syncAssignments(@Request() req: any, @Body() data: { shift_id: string; work_date: string; user_ids: string[] }) {
+    return this.shiftsService.syncAssignments(data, req.user?.userId);
   }
 
   @Post('assign')
-  assignShift(@Body() data: any) {
-    return this.shiftsService.assignShift(data);
+  assignShift(@Request() req: any, @Body() data: any) {
+    return this.shiftsService.assignShift(data, req.user?.userId);
   }
 
   @Put('assignments/:id')
-  updateAssignment(@Param('id') id: string, @Body() data: any) {
-    return this.shiftsService.updateAssignment(id, data);
+  updateAssignment(@Request() req: any, @Param('id') id: string, @Body() data: any) {
+    return this.shiftsService.updateAssignment(id, data, req.user?.userId);
   }
 
   @Delete('assignments/:id')
-  removeAssignment(@Param('id') id: string) {
-    return this.shiftsService.removeAssignment(id);
+  removeAssignment(@Request() req: any, @Param('id') id: string) {
+    return this.shiftsService.removeAssignment(id, req.user?.userId);
   }
 }

@@ -35,28 +35,37 @@ export class TelegramService implements OnModuleInit {
           // This is a deep-link flow — verify the token
           this.logger.log(`Received /start with token: ${payload} from chat ${ctx.chat.id}`);
 
-          const telegramId = ctx.chat.id.toString();
-          const telegramUsername = ctx.from?.username || undefined;
+          try {
+            const telegramId = ctx.chat.id.toString();
+            const telegramUsername = ctx.from?.username || undefined;
 
-          const result = await this.telegramLinkService.completeLinking(
-            payload,
-            telegramId,
-            telegramUsername,
-          );
+            const result = await this.telegramLinkService.completeLinking(
+              payload,
+              telegramId,
+              telegramUsername,
+            );
 
-          if (result.success) {
-            await ctx.reply(
-              `✅ Liên kết thành công!\n\n` +
-              `👤 Tài khoản: ${result.username}\n` +
-              `📱 Telegram ID: ${telegramId}\n` +
-              `${telegramUsername ? `@${telegramUsername}` : ''}\n\n` +
-              `Từ giờ bạn sẽ nhận thông báo ca làm tại đây. 🎉`,
-            );
-          } else {
-            await ctx.reply(
-              `❌ Liên kết thất bại: ${result.reason}\n\n` +
-              `Vui lòng quay lại trang quản lý và tạo lại link liên kết mới.`,
-            );
+            if (result.success) {
+              const transferMsg = result.transferredFrom
+                ? `ℹ️ *(Đã chuyển liên kết từ tài khoản: ${result.transferredFrom})*\n\n`
+                : '';
+              await ctx.reply(
+                `✅ Liên kết thành công!\n\n` +
+                `👤 Tài khoản: ${result.username}\n` +
+                `📱 Telegram ID: ${telegramId}\n` +
+                `${telegramUsername ? `@${telegramUsername}\n` : ''}\n` +
+                transferMsg +
+                `Từ giờ bạn sẽ nhận thông báo ca làm tại đây. 🎉`,
+              );
+            } else {
+              await ctx.reply(
+                `❌ Liên kết thất bại: ${result.reason}\n\n` +
+                `Vui lòng quay lại trang quản lý và tạo lại link liên kết mới.`,
+              );
+            }
+          } catch (err: any) {
+            this.logger.error(`Error in /start with token ${payload}:`, err);
+            await ctx.reply(`❌ Có lỗi xảy ra trong quá trình liên kết: ${err.message || 'Lỗi không xác định'}. Vui lòng thử lại.`).catch(() => {});
           }
         } else {
           // Normal /start without payload

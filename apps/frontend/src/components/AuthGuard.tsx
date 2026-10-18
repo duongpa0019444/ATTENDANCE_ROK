@@ -160,6 +160,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 <a href="/users" className={getMenuClass('/users')}>Nhân Sự</a>
                 <a href="/shifts" className={getMenuClass('/shifts')}>Phân Ca</a>
                 <a href="/payroll" className={getMenuClass('/payroll')}>Bảng Lương</a>
+                <a href="/audit-logs" className={getMenuClass('/audit-logs')}>Nhật Ký</a>
                 <a href="/guide" className={getMenuClass('/guide')}>Hướng Dẫn</a>
               </>
             )}
@@ -280,6 +281,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                   className={getMobileMenuClass('/payroll')}
                 >
                   Bảng Lương
+                </a>
+                <a 
+                  href="/audit-logs" 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={getMobileMenuClass('/audit-logs')}
+                >
+                  Nhật Ký
                 </a>
                 <a 
                   href="/guide" 

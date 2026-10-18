@@ -1,10 +1,14 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ImportExcelDto } from './import-excel.dto';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class ShiftsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditLogsService: AuditLogsService,
+  ) {}
 
   async findAllShifts(weekStartDateStr?: string) {
     const where: any = {};
@@ -18,7 +22,7 @@ export class ShiftsService {
     });
   }
 
-  async createShift(data: any) {
+  async createShift(data: any, actorId?: string) {
     let serverId = data.server_id;
 
     if (data.server_ids && Array.isArray(data.server_ids) && data.server_ids.length > 0) {
@@ -49,7 +53,7 @@ export class ShiftsService {
       }
     }
 
-    return this.prisma.shift.create({
+    const created = await this.prisma.shift.create({
       data: {
         name: data.name,
         server_id: serverId,
@@ -66,9 +70,40 @@ export class ShiftsService {
         week_start_date: data.week_start_date ? new Date(data.week_start_date) : null,
       }
     });
+
+    let serverName = 'N/A';
+    if (serverId) {
+      const srv = await this.prisma.server.findUnique({ where: { id: serverId }, select: { name: true } });
+      if (srv) serverName = srv.name;
+    }
+
+    const shiftLabel = created.name || created.start_time;
+    const timeRange = created.start_time + (created.end_time ? ` - ${created.end_time}` : '');
+
+    await this.auditLogsService.log({
+      actorId,
+      page: 'SHIFT_MANAGEMENT',
+      action: 'CREATE',
+      entityType: 'Shift',
+      entityId: created.id,
+      summary: `Tạo ca làm việc [${shiftLabel}] SV ${serverName} (${timeRange})`,
+      metadata: {
+        serverName,
+        shiftName: shiftLabel,
+        startTime: created.start_time,
+        created: {
+          'Tên ca': shiftLabel,
+          'Server': `SV ${serverName}`,
+          'Giờ làm': timeRange,
+          ...(created.base_salary ? { 'Lương cơ bản': `${Number(created.base_salary).toLocaleString('vi-VN')}đ` } : {}),
+        }
+      },
+    });
+
+    return created;
   }
 
-  async assignShift(data: any) {
+  async assignShift(data: any, actorId?: string) {
     // Support both single work_date and array work_dates
     const dates: string[] = data.work_dates
       ? data.work_dates
@@ -92,7 +127,9 @@ export class ShiftsService {
         },
         include: {
           user: true,
-          shift: true,
+          shift: {
+            include: { server: true }
+          },
         }
       });
 
@@ -111,6 +148,41 @@ export class ShiftsService {
       });
 
       results.push(assignment);
+    }
+
+    if (results.length > 0) {
+      const first = results[0];
+      const shift = first.shift;
+      const user = first.user;
+      const shiftInfo = `${shift?.name ? `${shift.name} ` : ''}(${shift?.start_time || ''}) SV ${shift?.server?.name || 'N/A'}`;
+      const userName = user?.full_name || user?.username || 'Nhân sự';
+      const formattedDates = dates.map(d => {
+        const dt = new Date(d);
+        return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
+      }).join(', ');
+
+      await this.auditLogsService.log({
+        actorId,
+        page: 'SHIFTS',
+        action: 'CREATE',
+        entityType: 'ShiftAssignment',
+        entityId: data.shift_id,
+        summary: `Phân công [${userName}] vào ca ${shiftInfo} ngày ${formattedDates}`,
+        metadata: {
+          serverName: shift?.server?.name || 'N/A',
+          shiftName: shift?.name || 'Ca làm',
+          startTime: shift?.start_time,
+          workDate: formattedDates,
+          changes: [
+            {
+              field: 'assignees',
+              label: 'Nhân sự trực ca',
+              old: 'Trống',
+              new: userName,
+            }
+          ]
+        }
+      });
     }
 
     return results;
@@ -140,12 +212,12 @@ export class ShiftsService {
     });
   }
 
-  async updateShift(id: string, data: any) {
-    const shift = await this.prisma.shift.findUnique({
+  async updateShift(id: string, data: any, actorId?: string) {
+    const oldShift = await this.prisma.shift.findUnique({
       where: { id },
-      select: { week_start_date: true },
+      include: { server: true }
     });
-    if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date, '12:00'))) {
+    if (oldShift?.week_start_date && (await this.prisma.isDateLocked(oldShift.week_start_date, '12:00'))) {
       throw new BadRequestException('Ca làm này thuộc tuần đã chốt bảng lương. Không thể sửa.');
     }
 
@@ -179,7 +251,7 @@ export class ShiftsService {
       }
     }
 
-    return this.prisma.shift.update({
+    const updated = await this.prisma.shift.update({
       where: { id },
       data: {
         name: data.name,
@@ -196,18 +268,112 @@ export class ShiftsService {
         weekend_bonus: data.weekend_bonus !== undefined ? (data.weekend_bonus !== null && data.weekend_bonus !== '' ? Number(data.weekend_bonus) : null) : undefined,
       },
     });
+
+    if (oldShift) {
+      const shiftChanges: Array<{ field: string; label: string; old: any; new: any }> = [];
+      const salaryChanges: Array<{ field: string; label: string; old: any; new: any }> = [];
+
+      const serverName = oldShift.server?.name || 'N/A';
+      const shiftLabel = updated.name || updated.start_time;
+
+      if (data.name !== undefined && data.name !== oldShift.name) {
+        shiftChanges.push({ field: 'name', label: 'Tên ca', old: oldShift.name || 'Không tên', new: data.name || 'Không tên' });
+      }
+      if (data.start_time !== undefined && data.start_time !== oldShift.start_time) {
+        shiftChanges.push({ field: 'start_time', label: 'Giờ bắt đầu', old: oldShift.start_time, new: data.start_time });
+      }
+      if (data.end_time !== undefined && data.end_time !== oldShift.end_time) {
+        shiftChanges.push({ field: 'end_time', label: 'Giờ kết thúc', old: oldShift.end_time || 'Không có', new: data.end_time || 'Không có' });
+      }
+      if (serverId && serverId !== oldShift.server_id) {
+        const newServer = await this.prisma.server.findUnique({ where: { id: serverId }, select: { name: true } });
+        shiftChanges.push({ field: 'server', label: 'Server', old: serverName, new: newServer?.name || 'N/A' });
+      }
+
+      // Salary & compensation diffs
+      if (data.base_salary !== undefined && Number(data.base_salary ?? -1) !== Number(oldShift.base_salary ?? -1)) {
+        salaryChanges.push({
+          field: 'base_salary',
+          label: 'Lương cơ bản',
+          old: oldShift.base_salary !== null && oldShift.base_salary !== undefined ? `${Number(oldShift.base_salary).toLocaleString('vi-VN')}đ` : 'Mặc định',
+          new: data.base_salary !== null && data.base_salary !== undefined ? `${Number(data.base_salary).toLocaleString('vi-VN')}đ` : 'Mặc định',
+        });
+      }
+      if (data.night_bonus_22_24 !== undefined && Number(data.night_bonus_22_24 ?? -1) !== Number(oldShift.night_bonus_22_24 ?? -1)) {
+        salaryChanges.push({
+          field: 'night_bonus_22_24',
+          label: 'Đêm (22h - 23h59)',
+          old: oldShift.night_bonus_22_24 !== null && oldShift.night_bonus_22_24 !== undefined ? `${Number(oldShift.night_bonus_22_24).toLocaleString('vi-VN')}đ` : 'Mặc định',
+          new: data.night_bonus_22_24 !== null && data.night_bonus_22_24 !== undefined ? `${Number(data.night_bonus_22_24).toLocaleString('vi-VN')}đ` : 'Mặc định',
+        });
+      }
+      if (data.night_bonus_0_3 !== undefined && Number(data.night_bonus_0_3 ?? -1) !== Number(oldShift.night_bonus_0_3 ?? -1)) {
+        salaryChanges.push({
+          field: 'night_bonus_0_3',
+          label: 'Đêm (00h - 2h59)',
+          old: oldShift.night_bonus_0_3 !== null && oldShift.night_bonus_0_3 !== undefined ? `${Number(oldShift.night_bonus_0_3).toLocaleString('vi-VN')}đ` : 'Mặc định',
+          new: data.night_bonus_0_3 !== null && data.night_bonus_0_3 !== undefined ? `${Number(data.night_bonus_0_3).toLocaleString('vi-VN')}đ` : 'Mặc định',
+        });
+      }
+      if (data.night_bonus_3_7 !== undefined && Number(data.night_bonus_3_7 ?? -1) !== Number(oldShift.night_bonus_3_7 ?? -1)) {
+        salaryChanges.push({
+          field: 'night_bonus_3_7',
+          label: 'Đêm (3h - 6h59)',
+          old: oldShift.night_bonus_3_7 !== null && oldShift.night_bonus_3_7 !== undefined ? `${Number(oldShift.night_bonus_3_7).toLocaleString('vi-VN')}đ` : 'Mặc định',
+          new: data.night_bonus_3_7 !== null && data.night_bonus_3_7 !== undefined ? `${Number(data.night_bonus_3_7).toLocaleString('vi-VN')}đ` : 'Mặc định',
+        });
+      }
+      if (data.weekend_bonus !== undefined && Number(data.weekend_bonus ?? -1) !== Number(oldShift.weekend_bonus ?? -1)) {
+        salaryChanges.push({
+          field: 'weekend_bonus',
+          label: 'Cuối tuần (T7/CN)',
+          old: oldShift.weekend_bonus !== null && oldShift.weekend_bonus !== undefined ? `${Number(oldShift.weekend_bonus).toLocaleString('vi-VN')}đ` : 'Mặc định',
+          new: data.weekend_bonus !== null && data.weekend_bonus !== undefined ? `${Number(data.weekend_bonus).toLocaleString('vi-VN')}đ` : 'Mặc định',
+        });
+      }
+
+      // Log Shift Management changes if any
+      if (shiftChanges.length > 0) {
+        const changeSummaries = shiftChanges.map(c => `${c.label}: "${c.old}" → "${c.new}"`).join(', ');
+        await this.auditLogsService.log({
+          actorId,
+          page: 'SHIFT_MANAGEMENT',
+          action: 'UPDATE',
+          entityType: 'Shift',
+          entityId: updated.id,
+          summary: `Cập nhật ca làm [${shiftLabel}]: ${changeSummaries}`,
+          metadata: { changes: shiftChanges, shiftName: shiftLabel, serverName },
+        });
+      }
+
+      // Log Payroll / Compensation changes if any
+      if (salaryChanges.length > 0) {
+        const salaryChangeSummaries = salaryChanges.map(c => `${c.label}: "${c.old}" → "${c.new}"`).join(', ');
+        await this.auditLogsService.log({
+          actorId,
+          page: 'PAYROLL',
+          action: 'UPDATE',
+          entityType: 'ShiftSalary',
+          entityId: updated.id,
+          summary: `Cấu hình thù lao ca [${shiftLabel}] SV ${serverName}: ${salaryChangeSummaries}`,
+          metadata: { changes: salaryChanges, shiftName: shiftLabel, serverName },
+        });
+      }
+    }
+
+    return updated;
   }
 
-  async removeShift(id: string) {
+  async removeShift(id: string, actorId?: string) {
     const shift = await this.prisma.shift.findUnique({
       where: { id },
-      select: { week_start_date: true },
+      include: { server: true },
     });
     if (shift?.week_start_date && (await this.prisma.isDateLocked(shift.week_start_date, '12:00'))) {
       throw new BadRequestException('Ca làm này thuộc tuần đã chốt bảng lương. Không thể xóa.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Find all assignments for this shift
       const assignments = await tx.shiftAssignment.findMany({
         where: { shift_id: id },
@@ -252,22 +418,47 @@ export class ShiftsService {
         where: { id },
       });
     });
+
+    const serverName = shift?.server?.name || 'N/A';
+    const shiftLabel = shift?.name || shift?.start_time || id;
+
+    await this.auditLogsService.log({
+      actorId,
+      page: 'SHIFT_MANAGEMENT',
+      action: 'DELETE',
+      entityType: 'Shift',
+      entityId: id,
+      summary: `Xóa ca làm việc [${shiftLabel}] SV ${serverName}`,
+      metadata: {
+        serverName,
+        shiftName: shiftLabel,
+        startTime: shift?.start_time,
+      },
+    });
+
+    return result;
   }
 
-  async updateAssignment(id: string, data: any) {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.shiftAssignment.findUnique({
-        where: { id },
-        select: { work_date: true, shift_id: true },
-      });
-      if (existing && (await this.prisma.isDateLocked(existing.work_date, existing.shift_id))) {
-        throw new BadRequestException('Bản phân công này thuộc ngày đã chốt bảng lương. Không thể chỉnh sửa.');
+  async updateAssignment(id: string, data: any, actorId?: string) {
+    const existing = await this.prisma.shiftAssignment.findUnique({
+      where: { id },
+      include: {
+        user: true,
+        shift: { include: { server: true } }
       }
-      if (data.work_date && (await this.prisma.isDateLocked(new Date(data.work_date), data.shift_id || existing.shift_id))) {
-        throw new BadRequestException('Ngày phân công mới đã bị chốt bảng lương. Không thể chuyển sang.');
-      }
+    });
+    if (!existing) {
+      throw new NotFoundException('Không tìm thấy ca phân công');
+    }
+    if (await this.prisma.isDateLocked(existing.work_date, existing.shift_id)) {
+      throw new BadRequestException('Bản phân công này thuộc ngày đã chốt bảng lương. Không thể chỉnh sửa.');
+    }
+    if (data.work_date && (await this.prisma.isDateLocked(new Date(data.work_date), data.shift_id || existing.shift_id))) {
+      throw new BadRequestException('Ngày phân công mới đã bị chốt bảng lương. Không thể chuyển sang.');
+    }
 
-      const updatedAssignment = await tx.shiftAssignment.update({
+    const updatedAssignment = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.shiftAssignment.update({
         where: { id },
         data: {
           user_id: data.user_id,
@@ -287,19 +478,60 @@ export class ShiftsService {
         });
       }
 
-      return updatedAssignment;
+      return updated;
     });
+
+    // Audit log
+    const changes: Array<{ field: string; label: string; old: any; new: any }> = [];
+    if (data.user_id && data.user_id !== existing.user_id) {
+      const newUser = await this.prisma.user.findUnique({ where: { id: data.user_id }, select: { full_name: true, username: true } });
+      changes.push({
+        field: 'assignees',
+        label: 'Nhân sự trực ca',
+        old: existing.user?.full_name || existing.user?.username || 'Chưa rõ',
+        new: newUser?.full_name || newUser?.username || 'Chưa rõ'
+      });
+    }
+
+    if (changes.length > 0) {
+      const formattedDate = `${String(existing.work_date.getDate()).padStart(2, '0')}/${String(existing.work_date.getMonth() + 1).padStart(2, '0')}/${existing.work_date.getFullYear()}`;
+      const shiftInfo = `${existing.shift?.name ? `${existing.shift.name} ` : ''}(${existing.shift?.start_time || ''}) SV ${existing.shift?.server?.name || 'N/A'}`;
+      await this.auditLogsService.log({
+        actorId,
+        page: 'SHIFTS',
+        action: 'UPDATE',
+        entityType: 'ShiftAssignment',
+        entityId: existing.shift_id,
+        summary: `Đổi nhân sự ca ${shiftInfo} ngày ${formattedDate}: [${changes[0].old}] ➔ [${changes[0].new}]`,
+        metadata: {
+          serverName: existing.shift?.server?.name || 'N/A',
+          shiftName: existing.shift?.name || 'Ca làm',
+          startTime: existing.shift?.start_time,
+          workDate: formattedDate,
+          changes
+        }
+      });
+    }
+
+    return updatedAssignment;
   }
 
-  async removeAssignment(id: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.shiftAssignment.findUnique({
-        where: { id },
-        select: { work_date: true, shift_id: true },
-      });
-      if (existing && (await this.prisma.isDateLocked(existing.work_date, existing.shift_id))) {
-        throw new BadRequestException('Bản phân công này thuộc ngày đã chốt bảng lương. Không thể xóa.');
+  async removeAssignment(id: string, actorId?: string) {
+    const existing = await this.prisma.shiftAssignment.findUnique({
+      where: { id },
+      include: {
+        user: true,
+        shift: { include: { server: true } }
       }
+    });
+    if (!existing) {
+      throw new NotFoundException('Không tìm thấy ca phân công');
+    }
+    if (await this.prisma.isDateLocked(existing.work_date, existing.shift_id)) {
+      throw new BadRequestException('Bản phân công này thuộc ngày đã chốt bảng lương. Không thể xóa.');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Delete associated EscalationLogs if any exist (via AttendanceLog)
       const logs = await tx.attendanceLog.findMany({
         where: { shift_assignment_id: id },
@@ -322,9 +554,38 @@ export class ShiftsService {
         where: { id },
       });
     });
+
+    const formattedDate = `${String(existing.work_date.getDate()).padStart(2, '0')}/${String(existing.work_date.getMonth() + 1).padStart(2, '0')}/${existing.work_date.getFullYear()}`;
+    const shiftInfo = `${existing.shift?.name ? `${existing.shift.name} ` : ''}(${existing.shift?.start_time || ''}) SV ${existing.shift?.server?.name || 'N/A'}`;
+    const userName = existing.user?.full_name || existing.user?.username || 'Nhân sự';
+
+    await this.auditLogsService.log({
+      actorId,
+      page: 'SHIFTS',
+      action: 'DELETE',
+      entityType: 'ShiftAssignment',
+      entityId: existing.shift_id,
+      summary: `Xóa nhân viên [${userName}] khỏi ca ${shiftInfo} ngày ${formattedDate}`,
+      metadata: {
+        serverName: existing.shift?.server?.name || 'N/A',
+        shiftName: existing.shift?.name || 'Ca làm',
+        startTime: existing.shift?.start_time,
+        workDate: formattedDate,
+        changes: [
+          {
+            field: 'assignees',
+            label: 'Nhân sự trực ca',
+            old: userName,
+            new: 'Trống (Đã xóa khỏi ca)',
+          }
+        ]
+      }
+    });
+
+    return result;
   }
 
-  async syncAssignments(data: { shift_id: string; work_date: string; user_ids: string[] }) {
+  async syncAssignments(data: { shift_id: string; work_date: string; user_ids: string[] }, actorId?: string) {
     const workDate = new Date(data.work_date);
     if (await this.prisma.isDateLocked(workDate, data.shift_id)) {
       throw new BadRequestException('Ngày phân ca này đã được chốt bảng lương. Không thể phân công nông dân.');
@@ -334,16 +595,36 @@ export class ShiftsService {
     const isPastDate = workDate < today;
     const targetUserIds = data.user_ids || [];
 
-    return this.prisma.$transaction(async (tx) => {
+    const shift = await this.prisma.shift.findUnique({
+      where: { id: data.shift_id },
+      include: { server: true }
+    });
+
+    let oldUsers: Array<{ id: string; full_name: string; username: string }> = [];
+    let targetUsers: Array<{ id: string; full_name: string; username: string }> = [];
+
+    const res = await this.prisma.$transaction(async (tx) => {
       // 1. Fetch current assignments for this slot & date
       const currentAssignments = await tx.shiftAssignment.findMany({
         where: {
           shift_id: data.shift_id,
           work_date: workDate,
         },
+        include: {
+          user: {
+            select: { id: true, full_name: true, username: true }
+          }
+        }
       });
 
+      oldUsers = currentAssignments.map(a => a.user);
       const currentAssigneeIds = currentAssignments.map(a => a.user_id);
+
+      // Fetch new assigned users for name resolution
+      targetUsers = await tx.user.findMany({
+        where: { id: { in: targetUserIds } },
+        select: { id: true, full_name: true, username: true }
+      });
 
       // 2. Identify who to remove
       const toRemove = currentAssignments.filter(a => !targetUserIds.includes(a.user_id));
@@ -400,7 +681,7 @@ export class ShiftsService {
       }
 
       // Return the current list of assignments after sync
-      return tx.shiftAssignment.findMany({
+      const synced = await tx.shiftAssignment.findMany({
         where: {
           shift_id: data.shift_id,
           work_date: workDate,
@@ -413,10 +694,76 @@ export class ShiftsService {
           attendance_logs: true,
         }
       });
+
+      return synced;
     });
+
+    // Compute diffs between old and new staff in this shift slot
+    const oldUserIds = oldUsers.map(u => u.id);
+    const toRemoveUsers = oldUsers.filter(u => !targetUserIds.includes(u.id));
+    const toAddUsers = targetUsers.filter(u => !oldUserIds.includes(u.id));
+
+    // If nothing changed, do not log redundant entry
+    if (toRemoveUsers.length > 0 || toAddUsers.length > 0) {
+      const formattedDate = `${String(workDate.getDate()).padStart(2, '0')}/${String(workDate.getMonth() + 1).padStart(2, '0')}/${workDate.getFullYear()}`;
+      const shiftInfo = `${shift?.name ? `${shift.name} ` : ''}(${shift?.start_time || ''}) SV ${shift?.server?.name || 'N/A'}`;
+      
+      const oldText = oldUsers.length > 0 ? oldUsers.map(u => u.full_name || u.username).join(', ') : 'Trống';
+      const newText = targetUsers.length > 0 ? targetUsers.map(u => u.full_name || u.username).join(', ') : 'Trống (Đã xóa khỏi ca)';
+
+      let action: 'CREATE' | 'UPDATE' | 'DELETE' = 'UPDATE';
+      let summary = '';
+
+      if (toRemoveUsers.length > 0 && toAddUsers.length === 0) {
+        // DELETE / REMOVAL
+        action = 'DELETE';
+        const removedNames = toRemoveUsers.map(u => u.full_name || u.username).join(', ');
+        summary = `Xóa nhân viên [${removedNames}] khỏi ca ${shiftInfo} ngày ${formattedDate}`;
+      } else if (toAddUsers.length > 0 && toRemoveUsers.length === 0) {
+        // CREATE / ADDITION
+        action = 'CREATE';
+        const addedNames = toAddUsers.map(u => u.full_name || u.username).join(', ');
+        summary = oldUsers.length === 0
+          ? `Phân công [${addedNames}] vào ca ${shiftInfo} ngày ${formattedDate}`
+          : `Thêm [${addedNames}] vào ca ${shiftInfo} ngày ${formattedDate}`;
+      } else {
+        // UPDATE / SWAP
+        action = 'UPDATE';
+        if (toRemoveUsers.length === 1 && toAddUsers.length === 1) {
+          summary = `Đổi nhân sự ca ${shiftInfo} ngày ${formattedDate}: [${toRemoveUsers[0].full_name || toRemoveUsers[0].username}] ➔ [${toAddUsers[0].full_name || toAddUsers[0].username}]`;
+        } else {
+          summary = `Cập nhật nhân sự ca ${shiftInfo} ngày ${formattedDate}: [${oldText}] ➔ [${newText}]`;
+        }
+      }
+
+      await this.auditLogsService.log({
+        actorId,
+        page: 'SHIFTS',
+        action,
+        entityType: 'ShiftAssignment',
+        entityId: data.shift_id,
+        summary,
+        metadata: {
+          serverName: shift?.server?.name || 'N/A',
+          shiftName: shift?.name || 'Ca làm',
+          startTime: shift?.start_time,
+          workDate: formattedDate,
+          changes: [
+            {
+              field: 'assignees',
+              label: 'Nhân sự trực ca',
+              old: oldText,
+              new: newText,
+            }
+          ]
+        },
+      });
+    }
+
+    return res;
   }
 
-  async cloneWeek(fromWeekStr: string, toWeekStr: string) {
+  async cloneWeek(fromWeekStr: string, toWeekStr: string, actorId?: string) {
     const fromWeek = new Date(fromWeekStr);
     const toWeek = new Date(toWeekStr);
 
@@ -461,10 +808,19 @@ export class ShiftsService {
       clonedShifts.push(cloned);
     }
 
+    await this.auditLogsService.log({
+      actorId,
+      page: 'SHIFTS',
+      action: 'CLONE',
+      entityType: 'Shift',
+      summary: `Sao chép lịch ca từ tuần ${fromWeekStr} sang tuần ${toWeekStr} (${clonedShifts.length} ca làm việc)`,
+      metadata: { fromWeek: fromWeekStr, toWeek: toWeekStr, count: clonedShifts.length },
+    });
+
     return { success: true, count: clonedShifts.length };
   }
 
-  async importExcel(dto: ImportExcelDto) {
+  async importExcel(dto: ImportExcelDto, actorId?: string) {
     const { week_start_date, assignments } = dto;
     const weekStartDate = new Date(week_start_date);
 
@@ -475,7 +831,7 @@ export class ShiftsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const txRes = await this.prisma.$transaction(async (tx) => {
       // ===== STEP 1: Delete ALL existing assignments on the imported dates within the current week's cycle =====
       const uniqueWorkDates = Array.from(new Set(assignments.map(a => a.work_date))).map(d => new Date(d));
 
@@ -653,5 +1009,21 @@ export class ShiftsService {
     }, {
       timeout: 50000
     });
+
+    await this.auditLogsService.log({
+      actorId,
+      page: 'SHIFTS',
+      action: 'EXCEL_IMPORT',
+      entityType: 'ShiftAssignment',
+      summary: `Tải lên file Excel ${dto.file_name ? `"${dto.file_name}" ` : ''}cho tuần ${dto.week_start_date}: ${txRes.count} lượt phân ca`,
+      metadata: {
+        fileName: dto.file_name || 'excel_import.xlsx',
+        weekStartDate: dto.week_start_date,
+        importedCount: txRes.count,
+        totalRows: dto.assignments.length,
+      },
+    });
+
+    return txRes;
   }
 }

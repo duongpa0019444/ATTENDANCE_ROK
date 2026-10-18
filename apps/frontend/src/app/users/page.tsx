@@ -9,7 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api';
-import { Check, Copy, Filter } from 'lucide-react';
+import { Check, Copy, Filter, History } from 'lucide-react';
+import PageHistoryDrawer from '@/components/PageHistoryDrawer';
+import { toast } from '@/components/ui/toast';
 
 const selectStyles = {
   control: (base: any, state: any) => ({
@@ -84,6 +86,7 @@ export default function UsersPage() {
   // Add Dialog State
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState('');
@@ -152,26 +155,43 @@ export default function UsersPage() {
 
   const handleCreate = async () => {
     if (!newUser.username || !newUser.full_name) {
-      alert('Vui lòng nhập đầy đủ thông tin user.');
+      toast.warning('Vui lòng nhập đầy đủ thông tin nông dân.');
       return;
     }
-    await apiFetch(`${API_URL}/users`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newUser)
-    });
-    setNewUser({ username: '', full_name: '' });
-    setIsAddDialogOpen(false);
-    fetchUsers();
+    try {
+      const res = await apiFetch(`${API_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+      if (res.ok) {
+        const createdUsername = newUser.username;
+        setNewUser({ username: '', full_name: '' });
+        setIsAddDialogOpen(false);
+        fetchUsers();
+        toast.success('Thêm nông dân thành công!', `Tài khoản [${createdUsername}] đã được tạo.`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Lỗi khi thêm người dùng', err.message || 'Lỗi server');
+      }
+    } catch (e) {
+      toast.error('Lỗi kết nối khi thêm người dùng.');
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Bạn có chắc chắn muốn xóa user này? (Hành động này sẽ xóa các ca làm liên quan)')) return;
     try {
-      await apiFetch(`${API_URL}/users/${id}`, { method: 'DELETE' });
-      fetchUsers();
+      const res = await apiFetch(`${API_URL}/users/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchUsers();
+        toast.success('Đã xóa người dùng thành công!');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Không thể xóa', err.message || 'User này có thể đang gắn với ca làm.');
+      }
     } catch (error) {
-      alert("Không thể xóa. User này có thể đang gắn với ca làm.");
+      toast.error('Không thể xóa', 'Đã xảy ra lỗi kết nối.');
     }
   };
 
@@ -181,22 +201,30 @@ export default function UsersPage() {
   };
 
   const handleUpdate = async () => {
-    await apiFetch(`${API_URL}/users/${editingUser.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editingUser)
-    });
-
-    if (editingUser.telegram_id !== undefined) {
-      await apiFetch(`${API_URL}/users/${editingUser.id}/telegram`, {
+    try {
+      const res = await apiFetch(`${API_URL}/users/${editingUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telegram_id: editingUser.telegram_id })
+        body: JSON.stringify({
+          username: editingUser.username,
+          full_name: editingUser.full_name,
+          role: editingUser.role,
+          password: editingUser.password || undefined,
+          telegram_id: editingUser.telegram_id,
+        })
       });
-    }
 
-    setIsEditDialogOpen(false);
-    fetchUsers();
+      if (res.ok) {
+        setIsEditDialogOpen(false);
+        fetchUsers();
+        toast.success('Cập nhật thành công!', `Thông tin [${editingUser.full_name}] đã được lưu.`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Cập nhật thất bại', err.message || 'Lỗi server');
+      }
+    } catch (e) {
+      toast.error('Lỗi kết nối khi cập nhật.');
+    }
   };
 
   // --- Telegram Link Flow ---
@@ -224,6 +252,7 @@ export default function UsersPage() {
     } catch (e) {
       console.error(e);
       setLinkStatus('ERROR');
+      toast.error('Lỗi tạo link liên kết Telegram');
     }
   };
 
@@ -239,9 +268,11 @@ export default function UsersPage() {
         if (data.status === 'LINKED') {
           setLinkStatus('LINKED');
           fetchUsers(); // Refresh user list
+          toast.success('Liên kết Telegram thành công!', `Tài khoản [${linkingUser?.full_name || 'Nông dân'}] đã kết nối Bot.`);
           clearInterval(interval);
         } else if (data.status === 'EXPIRED') {
           setLinkStatus('EXPIRED');
+          toast.warning('Link liên kết đã hết hạn.');
           clearInterval(interval);
         }
       } catch (e) {
@@ -250,7 +281,7 @@ export default function UsersPage() {
     }, 3000); // Poll every 3 seconds
 
     return () => clearInterval(interval);
-  }, [linkStatus, telegramLink, API_URL, fetchUsers]);
+  }, [linkStatus, telegramLink, API_URL, fetchUsers, linkingUser]);
 
   const closeTelegramDialog = () => {
     setIsTelegramDialogOpen(false);
@@ -266,10 +297,11 @@ export default function UsersPage() {
     try {
       await navigator.clipboard.writeText(telegramLink.deepLink);
       setIsTelegramLinkCopied(true);
+      toast.success('Đã sao chép link Telegram!', 'Gửi link này cho nhân viên để liên kết.');
       setTimeout(() => setIsTelegramLinkCopied(false), 2000);
     } catch (error) {
       console.error('Failed to copy Telegram link:', error);
-      alert('Không thể sao chép link. Vui lòng copy thủ công từ trình duyệt.');
+      toast.error('Không thể sao chép link', 'Vui lòng copy thủ công từ trình duyệt.');
     }
   };
 
@@ -290,6 +322,15 @@ export default function UsersPage() {
           </Button>
           <Button onClick={() => setIsAddDialogOpen(true)} className="bg-cyan-600 hover:bg-cyan-500 text-white flex-1 sm:flex-initial flex items-center justify-center gap-2 h-10 px-4">
             <span>+</span> Thêm User
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setIsHistoryOpen(true)}
+            className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium flex items-center justify-center gap-2 h-10 px-3.5 rounded-lg shrink-0"
+            title="Xem lịch sử chỉnh sửa nhân sự"
+          >
+            <History className="w-4 h-4" />
+            <span>Lịch sử</span>
           </Button>
         </div>
       </div>
@@ -663,6 +704,14 @@ export default function UsersPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Page History Drawer */}
+      <PageHistoryDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        page="USERS"
+        title="Lịch Sử Quản Lý Nhân Sự"
+      />
     </div>
   );
 }

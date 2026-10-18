@@ -1,9 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class ServersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditLogsService: AuditLogsService,
+  ) {}
 
   async findAll(weekStartDate?: string) {
     const servers = await this.prisma.server.findMany({
@@ -30,16 +34,36 @@ export class ServersService {
     return servers;
   }
 
-  async create(data: { name: string; base_salary?: number }) {
-    return this.prisma.server.create({
+  async create(data: { name: string; base_salary?: number }, actorId?: string) {
+    const server = await this.prisma.server.create({
       data: {
         name: data.name,
         base_salary: data.base_salary !== undefined ? Number(data.base_salary) : 0,
       },
     });
+
+    await this.auditLogsService.log({
+      actorId,
+      page: 'SERVERS',
+      action: 'CREATE',
+      entityType: 'Server',
+      entityId: server.id,
+      summary: `Thêm server [SV ${server.name}]`,
+      metadata: {
+        serverName: server.name,
+        created: {
+          'Tên server': `SV ${server.name}`,
+          'Lương cơ bản': server.base_salary ? `${Number(server.base_salary).toLocaleString('vi-VN')}đ` : 'Mặc định (0đ)',
+        }
+      }
+    });
+
+    return server;
   }
 
-  async update(id: string, data: { name?: string; status?: string; base_salary?: number; week_start_date?: string }) {
+  async update(id: string, data: { name?: string; status?: string; base_salary?: number; week_start_date?: string }, actorId?: string) {
+    const oldServer = await this.prisma.server.findUnique({ where: { id } });
+
     if (data.week_start_date) {
       const start = new Date(`${data.week_start_date}T00:00:00Z`);
       const end = new Date(start);
@@ -49,8 +73,8 @@ export class ServersService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const server = await tx.server.update({
+    const server = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.server.update({
         where: { id },
         data: {
           name: data.name,
@@ -88,12 +112,53 @@ export class ServersService {
         }
       }
 
-      return server;
+      return updated;
     });
+
+    if (oldServer) {
+      const changes: Array<{ field: string; label: string; old: any; new: any }> = [];
+      if (data.name && data.name !== oldServer.name) {
+        changes.push({ field: 'name', label: 'Tên server', old: `SV ${oldServer.name}`, new: `SV ${data.name}` });
+      }
+      if (data.base_salary !== undefined && Number(data.base_salary) !== Number(oldServer.base_salary)) {
+        changes.push({
+          field: 'base_salary',
+          label: 'Lương cơ bản',
+          old: `${Number(oldServer.base_salary || 0).toLocaleString('vi-VN')}đ`,
+          new: `${Number(data.base_salary || 0).toLocaleString('vi-VN')}đ`
+        });
+      }
+      if (data.status && data.status !== oldServer.status) {
+        changes.push({ field: 'status', label: 'Trạng thái', old: oldServer.status, new: data.status });
+      }
+
+      if (changes.length > 0) {
+        const summaries = changes.map(c => `${c.label}: "${c.old}" → "${c.new}"`).join(', ');
+        await this.auditLogsService.log({
+          actorId,
+          page: 'SERVERS',
+          action: 'UPDATE',
+          entityType: 'Server',
+          entityId: server.id,
+          summary: `Cập nhật server [SV ${server.name}]: ${summaries}`,
+          metadata: {
+            serverName: server.name,
+            changes
+          }
+        });
+      }
+    }
+
+    return server;
   }
 
-  async remove(id: string) {
-    return this.prisma.$transaction(async (tx) => {
+  async remove(id: string, actorId?: string) {
+    const server = await this.prisma.server.findUnique({
+      where: { id },
+      select: { name: true }
+    });
+
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Lấy danh sách ID các Ca làm (Shift) của Server này
       const shifts = await tx.shift.findMany({
         where: { server_id: id },
@@ -146,5 +211,19 @@ export class ServersService {
         where: { id },
       });
     });
+
+    await this.auditLogsService.log({
+      actorId,
+      page: 'SERVERS',
+      action: 'DELETE',
+      entityType: 'Server',
+      entityId: id,
+      summary: `Xóa server [SV ${server?.name || id}]`,
+      metadata: {
+        serverName: server?.name || 'N/A'
+      }
+    });
+
+    return result;
   }
 }

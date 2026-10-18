@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AuthGuard from "@/components/AuthGuard";
+import { Toaster } from "@/components/ui/toast";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -53,6 +54,7 @@ export default function RootLayout({
             {children}
           </main>
         </AuthGuard>
+        <Toaster />
       </body>
     </html>
   );

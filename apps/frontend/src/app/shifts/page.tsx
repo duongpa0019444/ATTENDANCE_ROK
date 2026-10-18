@@ -13,7 +13,9 @@ import Select from 'react-select';
 import DatePicker, { registerLocale, setDefaultLocale } from 'react-datepicker';
 import { format, addDays, startOfWeek, setHours, setMinutes, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { Calendar, Server as ServerIcon, Clock, Users, Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, ShieldAlert, X, Maximize2, Minimize2, Bell } from 'lucide-react';
+import { Calendar, Server as ServerIcon, Clock, Users, Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, ShieldAlert, X, Maximize2, Minimize2, Bell, History } from 'lucide-react';
+import PageHistoryDrawer from '@/components/PageHistoryDrawer';
+import { toast } from '@/components/ui/toast';
 
 registerLocale('vi', vi);
 setDefaultLocale('vi');
@@ -165,12 +167,21 @@ export default function ShiftsPage() {
   const [menuPortalTarget, setMenuPortalTarget] = useState<HTMLElement | null>(null);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
-  // Excel Import States
+  // Excel Import & History States
   const [isImporting, setIsImporting] = useState(false);
+  const [historyDrawerType, setHistoryDrawerType] = useState<'SHIFTS' | 'SHIFT_MANAGEMENT' | 'SERVERS' | null>(null);
+  const [activeHistoryPage, setActiveHistoryPage] = useState<'SHIFTS' | 'SHIFT_MANAGEMENT' | 'SERVERS'>('SHIFTS');
+
+  useEffect(() => {
+    if (historyDrawerType) {
+      setActiveHistoryPage(historyDrawerType);
+    }
+  }, [historyDrawerType]);
   const [excelUnmappedNames, setExcelUnmappedNames] = useState<string[]>([]);
   const [excelUserMap, setExcelUserMap] = useState<Record<string, string>>({});
   const [excelParsedData, setExcelParsedData] = useState<{
     week_start_date: string;
+    fileName?: string;
     rawAssignments: Array<{
       serverName: string;
       shiftName: string;
@@ -459,6 +470,7 @@ export default function ShiftsPage() {
 
         setExcelParsedData({
           week_start_date: weekStartDateStr,
+          fileName: file.name,
           rawAssignments: parsedAssignments,
         });
         setExcelUserMap(initialMap);
@@ -468,7 +480,7 @@ export default function ShiftsPage() {
           setIsImporting(false); // Tắt preloader để người dùng tương tác chọn map nhân viên
           setIsMappingDialogOpen(true);
         } else {
-          submitExcelImport(weekStartDateStr, parsedAssignments, initialMap);
+          submitExcelImport(weekStartDateStr, parsedAssignments, initialMap, file.name);
         }
       } catch (err) {
         console.error('Failed to parse Excel file:', err);
@@ -488,7 +500,8 @@ export default function ShiftsPage() {
       workDateStr: string;
       excelNames: string[];
     }>,
-    userMap: Record<string, string>
+    userMap: Record<string, string>,
+    fileName?: string
   ) => {
     setIsImporting(true);
     try {
@@ -514,6 +527,7 @@ export default function ShiftsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           week_start_date: weekStartDate,
+          file_name: fileName || excelParsedData?.fileName || 'lich_lam_viec.xlsx',
           assignments: assignmentsPayload,
         }),
       });
@@ -523,15 +537,15 @@ export default function ShiftsPage() {
         setExcelParsedData(null);
         setExcelUserMap({});
         setExcelUnmappedNames([]);
-        alert('Nhập lịch phân ca từ Excel thành công!');
+        toast.success('Nhập lịch Excel thành công!', 'Bảng phân ca đã được cập nhật thành công.');
         fetchData();
       } else {
-        const errData = await res.json();
-        alert(`Nhập lịch thất bại: ${errData.message || 'Lỗi server'}`);
+        const errData = await res.json().catch(() => ({}));
+        toast.error('Nhập lịch thất bại', errData.message || 'Lỗi server');
       }
     } catch (err) {
       console.error(err);
-      alert('Lỗi kết nối khi nhập Excel.');
+      toast.error('Lỗi kết nối khi nhập Excel.');
     } finally {
       setIsImporting(false);
     }
@@ -834,22 +848,35 @@ export default function ShiftsPage() {
         body: JSON.stringify({ name: newServerName.trim() })
       });
       if (res.ok) {
+        const createdName = newServerName.trim();
         setNewServerName('');
         setIsServerDialogOpen(false);
         fetchData();
+        toast.success('Thêm Server thành công!', `Server ${createdName} đã được thêm vào danh sách.`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Không thể tạo server', err.message || 'Lỗi server');
       }
     } catch (e) {
       console.error(e);
+      toast.error('Lỗi kết nối khi tạo server');
     }
   };
 
   const handleDeleteServer = async (id: string) => {
     if (!confirm('Bạn có chắc muốn xóa server này? Tất cả các ca và phân ca thuộc server này sẽ bị xóa!')) return;
     try {
-      await apiFetch(`${API_URL}/servers/${id}`, { method: 'DELETE' });
-      fetchData();
+      const res = await apiFetch(`${API_URL}/servers/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchData();
+        toast.success('Đã xóa Server thành công!');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Không thể xóa server', err.message || 'Lỗi server');
+      }
     } catch (e) {
       console.error(e);
+      toast.error('Lỗi kết nối khi xóa server');
     }
   };
 
@@ -877,9 +904,14 @@ export default function ShiftsPage() {
         });
         setIsShiftDialogOpen(false);
         fetchData();
+        toast.success('Thêm khung giờ ca thành công!');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Không thể tạo ca làm', err.message || 'Lỗi server');
       }
     } catch (e) {
       console.error(e);
+      toast.error('Lỗi kết nối khi tạo ca làm');
     }
   };
 
@@ -923,9 +955,14 @@ export default function ShiftsPage() {
         setIsEditShiftDialogOpen(false);
         setEditingShift(null);
         fetchData();
+        toast.success('Cập nhật ca làm thành công!');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Không thể cập nhật ca làm', err.message || 'Lỗi server');
       }
     } catch (e) {
       console.error(e);
+      toast.error('Lỗi kết nối khi cập nhật ca làm');
     }
   };
 
@@ -949,23 +986,34 @@ export default function ShiftsPage() {
         if (result.success) {
           handleCloseInitDialog();
           fetchData();
+          toast.success('Sao chép lịch thành công!', 'Đã sao chép lịch phân ca từ tuần trước.');
         } else {
-          alert(result.message || 'Không có ca làm việc nào ở tuần trước để sao chép.');
+          toast.warning(result.message || 'Không có ca làm việc nào ở tuần trước để sao chép.');
           handleCloseInitDialog();
         }
+      } else {
+        toast.error('Lỗi khi sao chép lịch');
       }
     } catch (e) {
       console.error('Failed to clone week shifts:', e);
+      toast.error('Lỗi kết nối khi sao chép lịch');
     }
   };
 
   const handleDeleteShift = async (id: string) => {
     if (!confirm('Bạn có chắc muốn xóa ca làm này? (Lịch sử phân ca và điểm danh liên quan sẽ bị xóa)')) return;
     try {
-      await apiFetch(`${API_URL}/shifts/${id}`, { method: 'DELETE' });
-      fetchData();
+      const res = await apiFetch(`${API_URL}/shifts/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchData();
+        toast.success('Đã xóa ca làm thành công!');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Không thể xóa ca làm', err.message || 'Lỗi server');
+      }
     } catch (e) {
       console.error(e);
+      toast.error('Lỗi kết nối khi xóa ca làm');
     }
   };
 
@@ -1002,9 +1050,14 @@ export default function ShiftsPage() {
         setIsAssignDialogOpen(false);
         setActiveCell(null);
         fetchData();
+        toast.success('Đã lưu phân ca thành công!');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Không thể lưu phân ca', err.message || 'Lỗi server');
       }
     } catch (e) {
       console.error(e);
+      toast.error('Lỗi kết nối khi lưu phân ca');
     }
   };
 
@@ -1263,6 +1316,17 @@ export default function ShiftsPage() {
                       className="hidden"
                       onChange={handleExcelImport}
                     />
+
+                    {/* History Drawer Button */}
+                    <Button
+                      variant="outline"
+                      onClick={() => setHistoryDrawerType('SHIFTS')}
+                      className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium h-10 px-3 rounded-lg flex items-center gap-1.5 transition-all text-xs shrink-0"
+                      title="Xem lịch sử phân ca & upload Excel"
+                    >
+                      <History className="w-4 h-4" />
+                      Lịch sử
+                    </Button>
 
                     {/* Fullscreen Toggle Button */}
                     <Button
@@ -1602,9 +1666,21 @@ export default function ShiftsPage() {
 
             {/* Shift List Table */}
             <Card className="bg-slate-900 border-slate-800 text-slate-100 lg:col-span-2 shadow-xl">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold">Danh sách Ca Làm (Khung giờ)</CardTitle>
-                <CardDescription>Danh sách các khung giờ hoạt động được cấu hình theo từng Server.</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <div>
+                  <CardTitle className="text-lg font-bold">Danh sách Ca Làm (Khung giờ)</CardTitle>
+                  <CardDescription>Danh sách các khung giờ hoạt động được cấu hình theo từng Server.</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setHistoryDrawerType('SHIFT_MANAGEMENT')}
+                  className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium h-9 px-3 rounded-lg flex items-center gap-1.5 transition-all text-xs shrink-0 cursor-pointer"
+                  title="Xem lịch sử cấu hình ca làm"
+                >
+                  <History className="w-4 h-4" />
+                  Lịch sử ca
+                </Button>
               </CardHeader>
               <CardContent className="p-0">
                 {shifts.length === 0 ? (
@@ -1706,9 +1782,21 @@ export default function ShiftsPage() {
 
             {/* Server List Table */}
             <Card className="bg-slate-900 border-slate-800 text-slate-100 lg:col-span-2 shadow-xl">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold">Danh sách Server hoạt động</CardTitle>
-                <CardDescription>Quản lý danh sách các server game có thể phân phối ca làm.</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <div>
+                  <CardTitle className="text-lg font-bold">Danh sách Server hoạt động</CardTitle>
+                  <CardDescription>Quản lý danh sách các server game có thể phân phối ca làm.</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setHistoryDrawerType('SERVERS')}
+                  className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium h-9 px-3 rounded-lg flex items-center gap-1.5 transition-all text-xs shrink-0 cursor-pointer"
+                  title="Xem lịch sử cấu hình server"
+                >
+                  <History className="w-4 h-4" />
+                  Lịch sử server
+                </Button>
               </CardHeader>
               <CardContent className="p-0">
                 {servers.filter((s: any) => !s.name.includes('+')).length === 0 ? (
@@ -2086,7 +2174,7 @@ export default function ShiftsPage() {
                 disabled={isImporting || isCreatingUsers}
                 onClick={() => {
                   if (excelParsedData) {
-                    submitExcelImport(excelParsedData.week_start_date, excelParsedData.rawAssignments, excelUserMap);
+                    submitExcelImport(excelParsedData.week_start_date, excelParsedData.rawAssignments, excelUserMap, excelParsedData.fileName);
                   }
                 }}
                 className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-lg h-10 px-4 transition-all active:scale-[0.98] flex items-center gap-1.5 self-end sm:self-auto"
@@ -2136,6 +2224,20 @@ export default function ShiftsPage() {
             </div>
           </div>
         )}
+
+        {/* Page History Drawer with smooth slide-in/out transitions */}
+        <PageHistoryDrawer
+          isOpen={!!historyDrawerType}
+          onClose={() => setHistoryDrawerType(null)}
+          page={activeHistoryPage}
+          title={
+            activeHistoryPage === 'SHIFTS'
+              ? 'Lịch Sử Phân Ca & Upload Excel'
+              : activeHistoryPage === 'SHIFT_MANAGEMENT'
+              ? 'Lịch Sử Quản Lý Ca Làm'
+              : 'Lịch Sử Quản Lý Server'
+          }
+        />
 
       </div>
     </div>

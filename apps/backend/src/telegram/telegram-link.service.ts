@@ -100,6 +100,27 @@ export class TelegramLinkService {
 
     const username = verification.username!;
 
+    // Check if telegramId is already linked to another user
+    const existingLinkedUser = await this.prisma.user.findUnique({
+      where: { telegram_id: telegramId },
+      select: { id: true, username: true, full_name: true },
+    });
+
+    let transferredFrom: string | null = null;
+    if (existingLinkedUser && existingLinkedUser.username !== username) {
+      // Unlink the previous user to avoid unique constraint error and allow transferring link
+      await this.prisma.user.update({
+        where: { id: existingLinkedUser.id },
+        data: {
+          telegram_id: null,
+          telegram_username: null,
+          telegram_linked_at: null,
+        },
+      });
+      transferredFrom = existingLinkedUser.full_name || existingLinkedUser.username;
+      this.logger.log(`Unlinked Telegram ID ${telegramId} from previous user "${existingLinkedUser.username}" to link with "${username}"`);
+    }
+
     // Update user with telegram info
     await this.prisma.user.update({
       where: { username },
@@ -118,7 +139,7 @@ export class TelegramLinkService {
 
     this.logger.log(`Successfully linked Telegram ID ${telegramId} to user "${username}"`);
 
-    return { success: true, username };
+    return { success: true, username, transferredFrom };
   }
 
   /**

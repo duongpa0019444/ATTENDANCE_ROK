@@ -43,6 +43,7 @@ export class PayrollController {
 
   @Post('settings')
   async updateSettings(
+    @Request() req: any,
     @Body()
     body: {
       nightShift22_24Bonus?: number;
@@ -52,7 +53,7 @@ export class PayrollController {
       defaultServerSalary?: number;
     },
   ) {
-    return this.payrollService.updateSettings(body);
+    return this.payrollService.updateSettings(body, req.user?.userId);
   }
 
   @Get('allowances')
@@ -65,6 +66,7 @@ export class PayrollController {
 
   @Post('allowances')
   async createAllowance(
+    @Request() req: any,
     @Body()
     body: {
       work_date: string;
@@ -72,11 +74,12 @@ export class PayrollController {
       note?: string;
     },
   ) {
-    return this.payrollService.upsertAllowance(body);
+    return this.payrollService.upsertAllowance(body, req.user?.userId);
   }
 
   @Put('allowances/:id')
   async updateAllowance(
+    @Request() req: any,
     @Param('id') id: string,
     @Body()
     body: {
@@ -85,12 +88,12 @@ export class PayrollController {
       note?: string;
     },
   ) {
-    return this.payrollService.updateAllowance(id, body);
+    return this.payrollService.updateAllowance(id, body, req.user?.userId);
   }
 
   @Delete('allowances/:id')
-  async deleteAllowance(@Param('id') id: string) {
-    return this.payrollService.deleteAllowance(id);
+  async deleteAllowance(@Request() req: any, @Param('id') id: string) {
+    return this.payrollService.deleteAllowance(id, req.user?.userId);
   }
 
   @Get('lock-status')
@@ -106,6 +109,7 @@ export class PayrollController {
 
   @Post('lock')
   async lockPeriod(
+    @Request() req: any,
     @Body()
     body: {
       start_date: string;
@@ -115,11 +119,12 @@ export class PayrollController {
     if (!body.start_date || !body.end_date) {
       throw new Error('Missing start_date or end_date');
     }
-    return this.payrollService.lockPeriod(body.start_date, body.end_date);
+    return this.payrollService.lockPeriod(body.start_date, body.end_date, req.user?.userId);
   }
 
   @Post('unlock')
   async unlockPeriod(
+    @Request() req: any,
     @Body()
     body: {
       start_date: string;
@@ -129,11 +134,12 @@ export class PayrollController {
     if (!body.start_date || !body.end_date) {
       throw new Error('Missing start_date or end_date');
     }
-    return this.payrollService.unlockPeriod(body.start_date, body.end_date);
+    return this.payrollService.unlockPeriod(body.start_date, body.end_date, req.user?.userId);
   }
 
   @Post('adjustments')
   async upsertAdjustment(
+    @Request() req: any,
     @Body()
     body: {
       userId: string;
@@ -149,7 +155,7 @@ export class PayrollController {
     if (!body.userId || !body.startDate || !body.endDate) {
       throw new Error('Missing userId, startDate or endDate');
     }
-    return this.payrollService.upsertAdjustment(body);
+    return this.payrollService.upsertAdjustment(body, req.user?.userId);
   }
 
   @Get('weekly-fund')
@@ -162,6 +168,7 @@ export class PayrollController {
 
   @Post('weekly-fund')
   async upsertWeeklyFund(
+    @Request() req: any,
     @Body()
     body: {
       start_date: string;
@@ -172,7 +179,7 @@ export class PayrollController {
     if (!body.start_date || !body.end_date) {
       throw new Error('Missing start_date or end_date');
     }
-    return this.payrollService.upsertWeeklyFund(body);
+    return this.payrollService.upsertWeeklyFund(body, req.user?.userId);
   }
 }
 

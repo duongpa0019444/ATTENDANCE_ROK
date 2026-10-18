@@ -14,12 +14,13 @@ import { ShiftsModule } from './shifts/shifts.module';
 import { AuthModule } from './auth/auth.module';
 import { ServersModule } from './servers/servers.module';
 import { PayrollModule } from './payroll/payroll.module';
+import { AuditLogsModule } from './audit-logs/audit-logs.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '../../.env', // Root .env path
+      envFilePath: ['.env', '../../.env'],
     }),
     ScheduleModule.forRoot(),
     BullModule.forRootAsync({
@@ -42,6 +43,7 @@ import { PayrollModule } from './payroll/payroll.module';
     AuthModule,
     ServersModule,
     PayrollModule,
+    AuditLogsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

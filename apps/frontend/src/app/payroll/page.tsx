@@ -12,8 +12,10 @@ import {
   Calendar, Download, Settings, Save,
   Server, Clock, Loader2, Sparkles, ArrowRight,
   Lock, Unlock, ShieldAlert, ChevronLeft, ChevronRight,
-  Plus, Trash2, Edit2, Maximize2, Minimize2, Eye, Sliders
+  Plus, Trash2, Edit2, Maximize2, Minimize2, Eye, Sliders, History
 } from 'lucide-react';
+import PageHistoryDrawer from '@/components/PageHistoryDrawer';
+import { toast } from '@/components/ui/toast';
 import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { vi } from 'date-fns/locale';
@@ -158,6 +160,7 @@ export default function PayrollPage() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
   const [filterMode, setFilterMode] = useState<'week' | 'custom'>('week');
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [startDate, setStartDate] = useState<string>(() => {
     const mon = getMonday(new Date());
     return format(mon, 'yyyy-MM-dd');
@@ -206,7 +209,6 @@ export default function PayrollPage() {
   
   const [weeklyFundAmount, setWeeklyFundAmount] = useState<string>('0');
   const [isSavingWeeklyFund, setIsSavingWeeklyFund] = useState<boolean>(false);
-  const [weeklyFundMessage, setWeeklyFundMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [isCheckingLock, setIsCheckingLock] = useState<boolean>(false);
@@ -239,7 +241,6 @@ export default function PayrollPage() {
     defaultServerSalary: 100000,
   });
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
-  const [settingsMessage, setSettingsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Server & Shift settings lists for manual setup
   const [servers, setServers] = useState<any[]>([]);
@@ -331,7 +332,7 @@ export default function PayrollPage() {
   const handleSaveWeeklyFund = async (val: string) => {
     const rawAmount = parseFloat(val.replace(/\./g, '').replace(/,/g, '')) || 0;
     try {
-      await apiFetch(`${API_URL}/payroll/weekly-fund`, {
+      const res = await apiFetch(`${API_URL}/payroll/weekly-fund`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -340,9 +341,15 @@ export default function PayrollPage() {
           amount: rawAmount,
         }),
       });
-      fetchPayroll();
+      if (res.ok) {
+        fetchPayroll();
+        toast.success('Đã lưu quỹ thưởng tuần!');
+      } else {
+        toast.error('Lỗi khi lưu quỹ thưởng tuần');
+      }
     } catch (err) {
       console.error('Error saving weekly fund:', err);
+      toast.error('Lỗi kết nối khi lưu quỹ thưởng');
     }
   };
 
@@ -359,15 +366,16 @@ export default function PayrollPage() {
         if (data.success) {
           setShowLockConfirm(false);
           await fetchPayroll();
+          toast.success('Chốt bảng lương thành công!', `Đã chốt lương chu kỳ ${startDate} - ${endDate}.`);
         } else {
-          alert(data.message || 'Không thể chốt bảng lương. Có lỗi xảy ra.');
+          toast.error('Không thể chốt bảng lương', data.message || 'Có lỗi xảy ra.');
         }
       } else {
-        alert('Không thể chốt bảng lương. Có lỗi xảy ra.');
+        toast.error('Không thể chốt bảng lương', 'Có lỗi xảy ra.');
       }
     } catch (err) {
       console.error('Failed to lock payroll:', err);
-      alert('Lỗi kết nối khi chốt bảng lương.');
+      toast.error('Lỗi kết nối khi chốt bảng lương.');
     } finally {
       setLockUnlockLoading(false);
     }
@@ -388,15 +396,16 @@ export default function PayrollPage() {
         if (data.success) {
           setShowUnlockConfirm(false);
           await fetchPayroll();
+          toast.success('Mở khóa bảng lương thành công!', 'Dữ liệu phân ca và lương đã được mở để chỉnh sửa.');
         } else {
-          alert(data.message || 'Không thể mở khóa bảng lương. Có lỗi xảy ra.');
+          toast.error('Không thể mở khóa bảng lương', data.message || 'Có lỗi xảy ra.');
         }
       } else {
-        alert('Không thể mở khóa bảng lương. Có lỗi xảy ra.');
+        toast.error('Không thể mở khóa bảng lương', 'Có lỗi xảy ra.');
       }
     } catch (err) {
       console.error('Failed to unlock payroll:', err);
-      alert('Lỗi kết nối khi mở khóa bảng lương.');
+      toast.error('Lỗi kết nối khi mở khóa bảng lương.');
     } finally {
       setLockUnlockLoading(false);
     }
@@ -446,7 +455,6 @@ export default function PayrollPage() {
   const handleSaveSystemSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingSettings(true);
-    setSettingsMessage(null);
     try {
       const res = await apiFetch(`${API_URL}/payroll/settings`, {
         method: 'POST',
@@ -454,15 +462,15 @@ export default function PayrollPage() {
         body: JSON.stringify(systemSettings),
       });
       if (res.ok) {
-        setSettingsMessage({ type: 'success', text: 'Cấu hình thù lao chung đã được lưu!' });
+        toast.success('Lưu cấu hình thành công!', 'Cấu hình thù lao chung đã được lưu.');
         fetchPayroll(); // Recalculate values
-        setTimeout(() => setSettingsMessage(null), 3000);
       } else {
-        setSettingsMessage({ type: 'error', text: 'Có lỗi xảy ra. Hãy thử lại.' });
+        const errData = await res.json().catch(() => ({}));
+        toast.error('Lỗi khi lưu cấu hình', errData.message || 'Có lỗi xảy ra. Hãy thử lại.');
       }
     } catch (err) {
       console.error('Failed to save settings:', err);
-      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu cấu hình.' });
+      toast.error('Lỗi kết nối', 'Không thể lưu cấu hình thù lao chung.');
     } finally {
       setIsSavingSettings(false);
     }
@@ -471,7 +479,6 @@ export default function PayrollPage() {
   const handleSaveAllowance = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingAllowance(true);
-    setSettingsMessage(null);
     try {
       const res = await apiFetch(`${API_URL}/payroll/allowances`, {
         method: 'POST',
@@ -486,16 +493,16 @@ export default function PayrollPage() {
       if (res.ok) {
         setAllowanceAmountInput('');
         setAllowanceNoteInput('');
-        setSettingsMessage({ type: 'success', text: 'Đã lưu phụ cấp theo ngày.' });
+        toast.success('Lưu phụ cấp thành công!', 'Đã lưu phụ cấp theo ngày.');
         fetchSettingsAndEntities();
         fetchPayroll();
-        setTimeout(() => setSettingsMessage(null), 3000);
       } else {
-        setSettingsMessage({ type: 'error', text: 'Không thể lưu phụ cấp theo ngày.' });
+        const errData = await res.json().catch(() => ({}));
+        toast.error('Lỗi khi lưu phụ cấp', errData.message || 'Không thể lưu phụ cấp theo ngày.');
       }
     } catch (err) {
       console.error('Failed to save allowance:', err);
-      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu phụ cấp theo ngày.' });
+      toast.error('Lỗi kết nối', 'Không thể lưu phụ cấp theo ngày.');
     } finally {
       setIsSavingAllowance(false);
     }
@@ -507,14 +514,16 @@ export default function PayrollPage() {
         method: 'DELETE',
       });
       if (res.ok) {
+        toast.success('Đã xóa phụ cấp theo ngày thành công!');
         fetchSettingsAndEntities();
         fetchPayroll();
       } else {
-        setSettingsMessage({ type: 'error', text: 'Không thể xóa phụ cấp theo ngày.' });
+        const errData = await res.json().catch(() => ({}));
+        toast.error('Lỗi khi xóa', errData.message || 'Không thể xóa phụ cấp theo ngày.');
       }
     } catch (err) {
       console.error('Failed to delete allowance:', err);
-      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể xóa phụ cấp theo ngày.' });
+      toast.error('Lỗi kết nối', 'Không thể xóa phụ cấp theo ngày.');
     }
   };
 
@@ -522,7 +531,6 @@ export default function PayrollPage() {
     e.preventDefault();
     if (!selectedServerId) return;
     setIsSavingServerSalary(true);
-    setSettingsMessage(null);
     try {
       const res = await apiFetch(`${API_URL}/shifts/${selectedServerId}`, {
         method: 'PUT',
@@ -535,16 +543,16 @@ export default function PayrollPage() {
         setIsServerSalaryDialogOpen(false);
         setSelectedServerId('');
         setServerBaseSalaryInput('');
-        setSettingsMessage({ type: 'success', text: 'Cấu hình lương ca đã được lưu!' });
+        toast.success('Lưu cấu hình thành công!', 'Cấu hình lương cơ bản ca đã được lưu.');
         fetchSettingsAndEntities();
         fetchPayroll();
-        setTimeout(() => setSettingsMessage(null), 3000);
       } else {
-        setSettingsMessage({ type: 'error', text: 'Không thể lưu cấu hình lương ca.' });
+        const errData = await res.json().catch(() => ({}));
+        toast.error('Lỗi khi lưu cấu hình', errData.message || 'Không thể lưu cấu hình lương ca.');
       }
     } catch (err) {
       console.error('Failed to update shift salary:', err);
-      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu cấu hình.' });
+      toast.error('Lỗi kết nối', 'Không thể lưu cấu hình lương ca.');
     } finally {
       setIsSavingServerSalary(false);
     }
@@ -565,11 +573,16 @@ export default function PayrollPage() {
       });
       if (res.ok) {
         setEditingShiftId(null);
+        toast.success('Cập nhật lương ca thành công!');
         fetchSettingsAndEntities();
         fetchPayroll();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error('Lỗi khi cập nhật lương ca', errData.message || 'Có lỗi xảy ra.');
       }
     } catch (err) {
       console.error('Failed to update shift salary:', err);
+      toast.error('Lỗi kết nối', 'Không thể cập nhật lương ca.');
     }
   };
 
@@ -601,7 +614,6 @@ export default function PayrollPage() {
     e.preventDefault();
     if (!selectedShiftId) return;
     setIsSavingShiftBonus(true);
-    setSettingsMessage(null);
     try {
       const shift = shifts.find(s => s.id === selectedShiftId);
       const baseSalary = shift ? shift.base_salary : null;
@@ -623,17 +635,17 @@ export default function PayrollPage() {
       });
 
       if (res.ok) {
-        setSettingsMessage({ type: 'success', text: 'Cấu hình phụ cấp ca đã được lưu!' });
+        toast.success('Lưu cấu hình thành công!', 'Cấu hình phụ cấp ca đã được lưu.');
         fetchSettingsAndEntities();
         fetchPayroll();
         setIsShiftBonusDialogOpen(false);
-        setTimeout(() => setSettingsMessage(null), 3000);
       } else {
-        setSettingsMessage({ type: 'error', text: 'Không thể lưu cấu hình phụ cấp ca.' });
+        const errData = await res.json().catch(() => ({}));
+        toast.error('Lỗi khi lưu cấu hình', errData.message || 'Không thể lưu cấu hình phụ cấp ca.');
       }
     } catch (err) {
       console.error('Failed to save shift bonus:', err);
-      setSettingsMessage({ type: 'error', text: 'Lỗi kết nối. Không thể lưu cấu hình.' });
+      toast.error('Lỗi kết nối', 'Không thể lưu cấu hình phụ cấp ca.');
     } finally {
       setIsSavingShiftBonus(false);
     }
@@ -659,6 +671,7 @@ export default function PayrollPage() {
         }),
       });
       if (res.ok) {
+        toast.success('Điều chỉnh lương thành công!', `Đã lưu thưởng/phạt cho [${adjustingStaff.fullName}].`);
         setIsAdjustmentDialogOpen(false);
         setAdjustingStaff(null);
         setAdjustmentPercentInput('');
@@ -907,6 +920,14 @@ export default function PayrollPage() {
               className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 font-medium text-xs flex items-center gap-1.5 h-9 rounded-lg"
             >
               <Download className="w-4 h-4" /> Xuất Báo Cáo
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsHistoryOpen(true)}
+              className="border-slate-800 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium text-xs flex items-center gap-1.5 h-9 rounded-lg"
+              title="Xem lịch sử thao tác bảng lương"
+            >
+              <History className="w-4 h-4" /> Lịch sử
             </Button>
           </div>
           {filterMode === 'week' && (
@@ -1226,14 +1247,6 @@ export default function PayrollPage() {
                           className="bg-slate-950/40 border-slate-800 text-slate-100 font-mono text-xs focus-visible:ring-cyan-500/20"
                         />
                       </div>
-                      {settingsMessage && (
-                        <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
-                          ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                          : 'bg-red-500/10 border-red-500/20 text-red-400'
-                          }`}>
-                          {settingsMessage.text}
-                        </div>
-                      )}
 
                       <Button
                         type="submit"
@@ -1262,13 +1275,11 @@ export default function PayrollPage() {
                     <form onSubmit={async (e) => {
                       e.preventDefault();
                       setIsSavingWeeklyFund(true);
-                      setWeeklyFundMessage(null);
                       try {
                         await handleSaveWeeklyFund(weeklyFundAmount);
-                        setWeeklyFundMessage({ type: 'success', text: 'Đã lưu cấu hình Quỹ tuần!' });
-                        setTimeout(() => setWeeklyFundMessage(null), 3000);
+                        toast.success('Lưu quỹ tuần thành công!', `Tổng quỹ tuần (${formatDateVi(startDate)} - ${formatDateVi(endDate)}) đã được lưu.`);
                       } catch (err) {
-                        setWeeklyFundMessage({ type: 'error', text: 'Không thể lưu Quỹ tuần.' });
+                        toast.error('Lỗi khi lưu quỹ tuần', 'Không thể lưu Quỹ tuần.');
                       } finally {
                         setIsSavingWeeklyFund(false);
                       }
@@ -1286,15 +1297,6 @@ export default function PayrollPage() {
                           className="bg-slate-950/40 border-slate-800 text-cyan-400 font-mono text-xs font-bold focus-visible:ring-cyan-500/20"
                         />
                       </div>
-
-                      {weeklyFundMessage && (
-                        <div className={`p-2 rounded text-xs border ${weeklyFundMessage.type === 'success'
-                          ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                          : 'bg-red-500/10 border-red-500/20 text-red-400'
-                          }`}>
-                          {weeklyFundMessage.text}
-                        </div>
-                      )}
 
                       <Button
                         type="submit"
@@ -1324,7 +1326,6 @@ export default function PayrollPage() {
                     onClick={() => {
                       setSelectedServerId('');
                       setServerBaseSalaryInput('');
-                      setSettingsMessage(null);
                       setIsServerSalaryDialogOpen(true);
                     }}
                     className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs h-7 px-2.5 rounded flex items-center gap-1"
@@ -1362,7 +1363,6 @@ export default function PayrollPage() {
                                     onClick={() => {
                                       setSelectedServerId(shift.id);
                                       setServerBaseSalaryInput(shift.base_salary.toString());
-                                      setSettingsMessage(null);
                                       setIsServerSalaryDialogOpen(true);
                                     }}
                                     className="bg-slate-800 hover:bg-slate-700 text-slate-300 h-7 w-7 p-0 rounded flex items-center justify-center"
@@ -1384,11 +1384,15 @@ export default function PayrollPage() {
                                             }),
                                           });
                                           if (res.ok) {
+                                            toast.success('Đã xóa cấu hình lương ca!', `Đã đặt lại lương ca ${displayName} về mặc định.`);
                                             fetchSettingsAndEntities();
                                             fetchPayroll();
+                                          } else {
+                                            toast.error('Lỗi khi xóa', 'Không thể xóa cấu hình lương ca.');
                                           }
                                         } catch (err) {
                                           console.error('Failed to remove shift salary:', err);
+                                          toast.error('Lỗi kết nối', 'Không thể xóa cấu hình lương ca.');
                                         }
                                       }
                                     }}
@@ -1432,7 +1436,6 @@ export default function PayrollPage() {
                       setShiftNight0_3BonusInput('');
                       setShiftNight3_7BonusInput('');
                       setShiftWeekendBonusInput('');
-                      setSettingsMessage(null);
                       setIsShiftBonusDialogOpen(true);
                     }}
                     className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs h-7 px-2.5 rounded flex items-center gap-1"
@@ -1494,7 +1497,6 @@ export default function PayrollPage() {
                                       setShiftNight0_3BonusInput(shift.night_bonus_0_3 !== null && shift.night_bonus_0_3 !== undefined ? String(shift.night_bonus_0_3) : '');
                                       setShiftNight3_7BonusInput(shift.night_bonus_3_7 !== null && shift.night_bonus_3_7 !== undefined ? String(shift.night_bonus_3_7) : '');
                                       setShiftWeekendBonusInput(shift.weekend_bonus !== null && shift.weekend_bonus !== undefined ? String(shift.weekend_bonus) : '');
-                                      setSettingsMessage(null);
                                       setIsShiftBonusDialogOpen(true);
                                     }}
                                     className="bg-slate-800 hover:bg-slate-700 text-slate-300 h-7 w-7 p-0 rounded flex items-center justify-center"
@@ -1521,11 +1523,15 @@ export default function PayrollPage() {
                                             }),
                                           });
                                           if (res.ok) {
+                                            toast.success('Đã xóa cấu hình phụ cấp ca!', 'Đã đặt lại phụ cấp ca về mặc định.');
                                             fetchSettingsAndEntities();
                                             fetchPayroll();
+                                          } else {
+                                            toast.error('Lỗi khi xóa', 'Không thể xóa cấu hình phụ cấp ca.');
                                           }
                                         } catch (err) {
                                           console.error('Failed to remove shift reward:', err);
+                                          toast.error('Lỗi kết nối', 'Không thể xóa cấu hình phụ cấp ca.');
                                         }
                                       }
                                     }}
@@ -2025,17 +2031,6 @@ export default function PayrollPage() {
               />
             </div>
 
-
-
-            {settingsMessage && (
-              <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
-                ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                : 'bg-red-500/10 border-red-500/20 text-red-400'
-                }`}>
-                {settingsMessage.text}
-              </div>
-            )}
-
             <DialogFooter className="flex gap-2 pt-2">
               <Button
                 type="button"
@@ -2111,15 +2106,6 @@ export default function PayrollPage() {
               />
             </div>
 
-            {settingsMessage && (
-              <div className={`p-2 rounded text-xs border ${settingsMessage.type === 'success'
-                ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                : 'bg-red-500/10 border-red-500/20 text-red-400'
-                }`}>
-                {settingsMessage.text}
-              </div>
-            )}
-
             <DialogFooter className="flex gap-2 pt-2">
               <Button
                 type="button"
@@ -2140,6 +2126,15 @@ export default function PayrollPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Page History Drawer */}
+      <PageHistoryDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        page="PAYROLL"
+        title="Lịch Sử Bảng Lương & Thù Lao"
+        defaultTab={activeTab === 'settings' ? 'CONFIG' : 'PAYROLL'}
+      />
 
     </div>
   );

@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class PayrollService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService,
+  ) { }
 
 
   formatDateOnly(date: Date) {
@@ -457,13 +461,18 @@ export class PayrollService {
     };
   }
 
-  async updateSettings(body: {
-    nightShift22_24Bonus?: number;
-    nightShift0_3Bonus?: number;
-    nightShift3_7Bonus?: number;
-    weekendBonus?: number;
-    defaultServerSalary?: number;
-  }) {
+  async updateSettings(
+    body: {
+      nightShift22_24Bonus?: number;
+      nightShift0_3Bonus?: number;
+      nightShift3_7Bonus?: number;
+      weekendBonus?: number;
+      defaultServerSalary?: number;
+    },
+    actorId?: string,
+  ) {
+    const oldSettings = await this.getSettings();
+
     if (body.nightShift22_24Bonus !== undefined) {
       await this.prisma.setSetting('NIGHT_SHIFT_22_24_BONUS', body.nightShift22_24Bonus.toString());
     }
@@ -479,6 +488,63 @@ export class PayrollService {
     if (body.defaultServerSalary !== undefined) {
       await this.prisma.setSetting('DEFAULT_SERVER_SALARY', body.defaultServerSalary.toString());
     }
+
+    const changes: Array<{ field: string; label: string; old: string; new: string }> = [];
+    const formatMoney = (val?: number) => (val !== undefined && val !== null ? `${Number(val).toLocaleString('vi-VN')}đ` : '0đ');
+
+    if (body.nightShift22_24Bonus !== undefined && Number(body.nightShift22_24Bonus) !== Number(oldSettings.nightShift22_24Bonus)) {
+      changes.push({
+        field: 'nightShift22_24Bonus',
+        label: 'Phụ cấp ca đêm (22h - 23h59)',
+        old: formatMoney(oldSettings.nightShift22_24Bonus),
+        new: formatMoney(body.nightShift22_24Bonus),
+      });
+    }
+    if (body.nightShift0_3Bonus !== undefined && Number(body.nightShift0_3Bonus) !== Number(oldSettings.nightShift0_3Bonus)) {
+      changes.push({
+        field: 'nightShift0_3Bonus',
+        label: 'Phụ cấp ca đêm (00h - 2h59)',
+        old: formatMoney(oldSettings.nightShift0_3Bonus),
+        new: formatMoney(body.nightShift0_3Bonus),
+      });
+    }
+    if (body.nightShift3_7Bonus !== undefined && Number(body.nightShift3_7Bonus) !== Number(oldSettings.nightShift3_7Bonus)) {
+      changes.push({
+        field: 'nightShift3_7Bonus',
+        label: 'Phụ cấp ca đêm (3h - 6h59)',
+        old: formatMoney(oldSettings.nightShift3_7Bonus),
+        new: formatMoney(body.nightShift3_7Bonus),
+      });
+    }
+    if (body.weekendBonus !== undefined && Number(body.weekendBonus) !== Number(oldSettings.weekendBonus)) {
+      changes.push({
+        field: 'weekendBonus',
+        label: 'Phụ cấp cuối tuần (T7/CN)',
+        old: formatMoney(oldSettings.weekendBonus),
+        new: formatMoney(body.weekendBonus),
+      });
+    }
+    if (body.defaultServerSalary !== undefined && Number(body.defaultServerSalary) !== Number(oldSettings.defaultServerSalary)) {
+      changes.push({
+        field: 'defaultServerSalary',
+        label: 'Lương cơ bản theo ca',
+        old: formatMoney(oldSettings.defaultServerSalary),
+        new: formatMoney(body.defaultServerSalary),
+      });
+    }
+
+    if (changes.length > 0) {
+      const changeSummaries = changes.map(c => `${c.label}: "${c.old}" → "${c.new}"`).join(', ');
+      await this.auditLogsService.log({
+        actorId,
+        page: 'PAYROLL',
+        action: 'UPDATE',
+        entityType: 'SystemSetting',
+        summary: `Cập nhật cấu hình thù lao chung: ${changeSummaries}`,
+        metadata: { changes },
+      });
+    }
+
     return { success: true };
   }
 
@@ -497,13 +563,17 @@ export class PayrollService {
     });
   }
 
-  async upsertAllowance(body: { work_date: string; amount: number; note?: string }) {
+  async upsertAllowance(body: { work_date: string; amount: number; note?: string }, actorId?: string) {
     const workDate = this.parseDateOnly(body.work_date);
     if (await this.prisma.isDateLocked(workDate)) {
       throw new BadRequestException('Ngày phụ cấp này thuộc giai đoạn đã chốt bảng lương. Không thể chỉnh sửa.');
     }
 
-    return this.prisma.payrollAllowance.upsert({
+    const existing = await this.prisma.payrollAllowance.findUnique({
+      where: { work_date: workDate },
+    });
+
+    const result = await this.prisma.payrollAllowance.upsert({
       where: { work_date: workDate },
       update: {
         amount: Number(body.amount) || 0,
@@ -515,9 +585,73 @@ export class PayrollService {
         note: body.note || null,
       },
     });
+
+    const formattedDate = `${String(workDate.getDate()).padStart(2, '0')}/${String(workDate.getMonth() + 1).padStart(2, '0')}/${workDate.getFullYear()}`;
+    const formatMoney = (val?: number) => (val !== undefined && val !== null ? `${Number(val).toLocaleString('vi-VN')}đ` : '0đ');
+
+    if (existing) {
+      const changes: Array<{ field: string; label: string; old: string; new: string }> = [];
+      const oldAmount = Number(existing.amount) || 0;
+      const newAmount = Number(body.amount) || 0;
+      if (oldAmount !== newAmount) {
+        changes.push({
+          field: 'amount',
+          label: 'Số tiền phụ cấp',
+          old: formatMoney(oldAmount),
+          new: formatMoney(newAmount),
+        });
+      }
+
+      const oldNote = (existing.note || '').trim();
+      const newNote = (body.note || '').trim();
+      if (oldNote !== newNote) {
+        changes.push({
+          field: 'note',
+          label: 'Ghi chú',
+          old: oldNote || 'Trống',
+          new: newNote || 'Trống',
+        });
+      }
+
+      if (changes.length > 0) {
+        const changeSummaries = changes.map(c => `${c.label}: "${c.old}" → "${c.new}"`).join(', ');
+        await this.auditLogsService.log({
+          actorId,
+          page: 'PAYROLL',
+          action: 'UPDATE',
+          entityType: 'Allowance',
+          entityId: result.id,
+          summary: `Cập nhật phụ cấp ngày [${formattedDate}]: ${changeSummaries}`,
+          metadata: {
+            workDate: formattedDate,
+            changes,
+          },
+        });
+      }
+    } else {
+      const newAmount = Number(body.amount) || 0;
+      const noteStr = body.note ? ` (Ghi chú: ${body.note})` : '';
+      await this.auditLogsService.log({
+        actorId,
+        page: 'PAYROLL',
+        action: 'CREATE',
+        entityType: 'Allowance',
+        entityId: result.id,
+        summary: `Thêm phụ cấp ngày [${formattedDate}]: ${formatMoney(newAmount)}${noteStr}`,
+        metadata: {
+          workDate: formattedDate,
+          changes: [
+            { field: 'amount', label: 'Số tiền phụ cấp', old: '0đ', new: formatMoney(newAmount) },
+            ...(body.note ? [{ field: 'note', label: 'Ghi chú', old: 'Trống', new: body.note }] : []),
+          ],
+        },
+      });
+    }
+
+    return result;
   }
 
-  async updateAllowance(id: string, body: { work_date: string; amount: number; note?: string }) {
+  async updateAllowance(id: string, body: { work_date: string; amount: number; note?: string }, actorId?: string) {
     const existing = await this.prisma.payrollAllowance.findUnique({ where: { id } });
     if (!existing) {
       throw new BadRequestException('Không tìm thấy ngày phụ cấp.');
@@ -531,7 +665,7 @@ export class PayrollService {
       throw new BadRequestException('Ngày phụ cấp mới thuộc giai đoạn đã chốt bảng lương. Không thể chỉnh sửa.');
     }
 
-    return this.prisma.payrollAllowance.update({
+    const result = await this.prisma.payrollAllowance.update({
       where: { id },
       data: {
         work_date: workDate,
@@ -539,9 +673,54 @@ export class PayrollService {
         note: body.note || null,
       },
     });
+
+    const formatMoney = (val?: number) => (val !== undefined && val !== null ? `${Number(val).toLocaleString('vi-VN')}đ` : '0đ');
+    const oldDateStr = `${String(existing.work_date.getDate()).padStart(2, '0')}/${String(existing.work_date.getMonth() + 1).padStart(2, '0')}/${existing.work_date.getFullYear()}`;
+    const newDateStr = `${String(workDate.getDate()).padStart(2, '0')}/${String(workDate.getMonth() + 1).padStart(2, '0')}/${workDate.getFullYear()}`;
+
+    const changes: Array<{ field: string; label: string; old: string; new: string }> = [];
+    if (oldDateStr !== newDateStr) {
+      changes.push({ field: 'work_date', label: 'Ngày áp dụng', old: oldDateStr, new: newDateStr });
+    }
+    if (Number(existing.amount) !== Number(body.amount)) {
+      changes.push({
+        field: 'amount',
+        label: 'Số tiền phụ cấp',
+        old: formatMoney(existing.amount),
+        new: formatMoney(body.amount),
+      });
+    }
+    const oldNote = (existing.note || '').trim();
+    const newNote = (body.note || '').trim();
+    if (oldNote !== newNote) {
+      changes.push({
+        field: 'note',
+        label: 'Ghi chú',
+        old: oldNote || 'Trống',
+        new: newNote || 'Trống',
+      });
+    }
+
+    if (changes.length > 0) {
+      const changeSummaries = changes.map(c => `${c.label}: "${c.old}" → "${c.new}"`).join(', ');
+      await this.auditLogsService.log({
+        actorId,
+        page: 'PAYROLL',
+        action: 'UPDATE',
+        entityType: 'Allowance',
+        entityId: id,
+        summary: `Cập nhật phụ cấp ngày [${newDateStr}]: ${changeSummaries}`,
+        metadata: {
+          workDate: newDateStr,
+          changes,
+        },
+      });
+    }
+
+    return result;
   }
 
-  async deleteAllowance(id: string) {
+  async deleteAllowance(id: string, actorId?: string) {
     const existing = await this.prisma.payrollAllowance.findUnique({ where: { id } });
     if (!existing) {
       throw new BadRequestException('Không tìm thấy ngày phụ cấp.');
@@ -550,7 +729,28 @@ export class PayrollService {
       throw new BadRequestException('Ngày phụ cấp này thuộc giai đoạn đã chốt bảng lương. Không thể xóa.');
     }
 
-    return this.prisma.payrollAllowance.delete({ where: { id } });
+    const result = await this.prisma.payrollAllowance.delete({ where: { id } });
+
+    const formatMoney = (val?: number) => (val !== undefined && val !== null ? `${Number(val).toLocaleString('vi-VN')}đ` : '0đ');
+    const formattedDate = `${String(existing.work_date.getDate()).padStart(2, '0')}/${String(existing.work_date.getMonth() + 1).padStart(2, '0')}/${existing.work_date.getFullYear()}`;
+
+    await this.auditLogsService.log({
+      actorId,
+      page: 'PAYROLL',
+      action: 'DELETE',
+      entityType: 'Allowance',
+      entityId: id,
+      summary: `Xóa phụ cấp ngày [${formattedDate}] (${formatMoney(existing.amount)})`,
+      metadata: {
+        workDate: formattedDate,
+        changes: [
+          { field: 'amount', label: 'Số tiền phụ cấp', old: formatMoney(existing.amount), new: '0đ (Đã xóa)' },
+          ...(existing.note ? [{ field: 'note', label: 'Ghi chú', old: existing.note, new: 'Trống' }] : []),
+        ],
+      },
+    });
+
+    return result;
   }
 
   async getPeriodLockStatus(startDateStr: string, endDateStr: string) {
@@ -578,7 +778,7 @@ export class PayrollService {
     return { locked: false };
   }
 
-  async lockPeriod(startDateStr: string, endDateStr: string) {
+  async lockPeriod(startDateStr: string, endDateStr: string, actorId?: string) {
     const start = this.parseDateOnly(startDateStr);
     const end = this.parseDateOnly(endDateStr);
 
@@ -633,10 +833,19 @@ export class PayrollService {
       }
     });
 
+    await this.auditLogsService.log({
+      actorId,
+      page: 'PAYROLL',
+      action: 'LOCK',
+      entityType: 'LockedPeriod',
+      summary: `Chốt bảng lương giai đoạn từ ${startDateStr} đến ${endDateStr} (${payroll.length} nhân sự)`,
+      metadata: { startDate: startDateStr, endDate: endDateStr, staffCount: payroll.length },
+    });
+
     return { success: true };
   }
 
-  async unlockPeriod(startDateStr: string, endDateStr: string) {
+  async unlockPeriod(startDateStr: string, endDateStr: string, actorId?: string) {
     const start = this.parseDateOnly(startDateStr);
     const end = this.parseDateOnly(endDateStr);
 
@@ -655,6 +864,15 @@ export class PayrollService {
       where: { id: locked.id },
     });
 
+    await this.auditLogsService.log({
+      actorId,
+      page: 'PAYROLL',
+      action: 'UNLOCK',
+      entityType: 'LockedPeriod',
+      summary: `Mở khóa bảng lương giai đoạn từ ${startDateStr} đến ${endDateStr}`,
+      metadata: { startDate: startDateStr, endDate: endDateStr },
+    });
+
     return { success: true };
   }
 
@@ -667,7 +885,7 @@ export class PayrollService {
     adjustmentAmount?: number;
     otherAllowance?: number;
     note?: string;
-  }) {
+  }, actorId?: string) {
     const start = this.parseDateOnly(body.startDate);
     const end = this.parseDateOnly(body.endDate);
 
@@ -728,7 +946,17 @@ export class PayrollService {
       note: body.note || null,
     };
 
-    return this.prisma.payrollAdjustment.upsert({
+    const oldAdj = await this.prisma.payrollAdjustment.findUnique({
+      where: {
+        user_id_start_date_end_date: {
+          user_id: body.userId,
+          start_date: start,
+          end_date: end,
+        },
+      },
+    });
+
+    const result = await this.prisma.payrollAdjustment.upsert({
       where: {
         user_id_start_date_end_date: {
           user_id: body.userId,
@@ -739,6 +967,64 @@ export class PayrollService {
       update: updateData,
       create: createData,
     });
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: body.userId },
+      select: { full_name: true, username: true },
+    });
+
+    const changes: Array<{ field: string; label: string; old: any; new: any }> = [];
+    const oldPercent = oldAdj?.adjustment_percent || 0;
+    const newPercent = body.adjustmentPercent !== undefined ? Number(body.adjustmentPercent) : oldPercent;
+    if (newPercent !== oldPercent) {
+      changes.push({ field: 'adjustment_percent', label: 'Tỷ lệ điều chỉnh', old: oldPercent + '%', new: newPercent + '%' });
+    }
+
+    const oldAmount = (oldAdj as any)?.adjustment_amount || 0;
+    const newAmount = body.adjustmentAmount !== undefined ? Number(body.adjustmentAmount) : oldAmount;
+    if (newAmount !== oldAmount) {
+      changes.push({ field: 'adjustment_amount', label: 'Tiền thưởng/phạt', old: oldAmount.toLocaleString('vi-VN') + 'đ', new: newAmount.toLocaleString('vi-VN') + 'đ' });
+    }
+
+    const oldAllowance = (oldAdj as any)?.other_allowance || 0;
+    const newAllowance = body.otherAllowance !== undefined ? Number(body.otherAllowance) : oldAllowance;
+    if (newAllowance !== oldAllowance) {
+      changes.push({ field: 'other_allowance', label: 'Phụ cấp khác', old: oldAllowance.toLocaleString('vi-VN') + 'đ', new: newAllowance.toLocaleString('vi-VN') + 'đ' });
+    }
+
+    const oldFund = (oldAdj as any)?.fund_percent || 0;
+    const newFund = body.fundPercent !== undefined ? Number(body.fundPercent) : oldFund;
+    if (newFund !== oldFund) {
+      changes.push({ field: 'fund_percent', label: 'Tỷ lệ chia quỹ', old: oldFund + '%', new: newFund + '%' });
+    }
+
+    const cleanOldNote = (oldAdj?.note || '').trim();
+    const cleanNewNote = (body.note !== undefined && body.note !== null ? String(body.note) : cleanOldNote).trim();
+    if (cleanNewNote !== cleanOldNote) {
+      changes.push({
+        field: 'note',
+        label: 'Ghi chú',
+        old: cleanOldNote || 'Trống',
+        new: cleanNewNote || 'Trống',
+      });
+    }
+
+    const actualChanges = changes.filter(c => String(c.old).trim() !== String(c.new).trim());
+
+    if (actualChanges.length > 0) {
+      const changeSummaries = actualChanges.map(c => `${c.label}: "${c.old}" → "${c.new}"`).join(', ');
+      await this.auditLogsService.log({
+        actorId,
+        page: 'PAYROLL',
+        action: 'UPDATE',
+        entityType: 'PayrollAdjustment',
+        entityId: result.id,
+        summary: `Điều chỉnh thưởng/phạt [${targetUser?.full_name || body.userId}]: ${changeSummaries}`,
+        metadata: { changes: actualChanges, targetUserName: targetUser?.full_name, startDate: body.startDate, endDate: body.endDate },
+      });
+    }
+
+    return result;
   }
 
   async getWeeklyFund(startDateStr: string) {
@@ -748,7 +1034,7 @@ export class PayrollService {
     });
   }
 
-  async upsertWeeklyFund(body: { start_date: string; end_date: string; amount: number }) {
+  async upsertWeeklyFund(body: { start_date: string; end_date: string; amount: number }, actorId?: string) {
     const start = this.parseDateOnly(body.start_date);
     const end = this.parseDateOnly(body.end_date);
 
@@ -756,7 +1042,11 @@ export class PayrollService {
       throw new BadRequestException('Tuần này đã chốt bảng lương. Không thể chỉnh sửa quỹ.');
     }
 
-    return this.prisma.weeklyFund.upsert({
+    const existing = await this.prisma.weeklyFund.findUnique({
+      where: { start_date: start },
+    });
+
+    const result = await this.prisma.weeklyFund.upsert({
       where: { start_date: start },
       update: {
         amount: Number(body.amount) || 0,
@@ -768,5 +1058,37 @@ export class PayrollService {
         amount: Number(body.amount) || 0,
       },
     });
+
+    const formatMoney = (val?: number) => (val !== undefined && val !== null ? `${Number(val).toLocaleString('vi-VN')}đ` : '0đ');
+    const startStr = `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}/${start.getFullYear()}`;
+    const endStr = `${String(end.getDate()).padStart(2, '0')}/${String(end.getMonth() + 1).padStart(2, '0')}/${end.getFullYear()}`;
+
+    const oldAmount = existing ? existing.amount : 0;
+    const newAmount = Number(body.amount) || 0;
+
+    if (oldAmount !== newAmount || !existing) {
+      await this.auditLogsService.log({
+        actorId,
+        page: 'PAYROLL',
+        action: existing ? 'UPDATE' : 'CREATE',
+        entityType: 'WeeklyFund',
+        entityId: result.id,
+        summary: `${existing ? 'Cập nhật' : 'Thiết lập'} quỹ thưởng tuần [${startStr} - ${endStr}]: "${formatMoney(oldAmount)}" → "${formatMoney(newAmount)}"`,
+        metadata: {
+          startDate: body.start_date,
+          endDate: body.end_date,
+          changes: [
+            {
+              field: 'amount',
+              label: 'Số tiền quỹ tuần',
+              old: formatMoney(oldAmount),
+              new: formatMoney(newAmount),
+            },
+          ],
+        },
+      });
+    }
+
+    return result;
   }
 }

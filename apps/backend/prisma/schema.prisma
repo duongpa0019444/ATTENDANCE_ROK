@@ -153,15 +153,19 @@ model EscalationLog {
 }
 
 model AuditLog {
-  id               String             @id @default(uuid())
-  actor_id         String?
-  action           String
-  entity_type      String
-  entity_id        String
-  metadata         Json?
-  created_at       DateTime           @default(now())
-  actor            User?              @relation(fields: [actor_id], references: [id])
+  id          String   @id @default(uuid())
+  actor_id    String?
+  page        String?  @default("SYSTEM")
+  action      String
+  entity_type String
+  entity_id   String?
+  summary     String?
+  metadata    Json?
+  created_at  DateTime @default(now())
+  actor       User?    @relation(fields: [actor_id], references: [id])
 
+  @@index([page, created_at])
+  @@index([actor_id])
   @@map("audit_logs")
 }
 
