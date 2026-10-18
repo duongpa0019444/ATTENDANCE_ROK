@@ -124,11 +124,22 @@ export class AuditLogsService {
       }),
     ]);
 
+    const formattedLogs = logs.map((log) => {
+      if (!log.summary && log.action === 'READY') {
+        const actorName = log.actor?.full_name || log.actor?.username || 'Nhân sự';
+        return {
+          ...log,
+          summary: `Nhân viên [${actorName}] đã bấm xác nhận "Tôi đã sẵn sàng" trên Telegram`,
+        };
+      }
+      return log;
+    });
+
     return {
       total,
       limit,
       offset,
-      data: logs,
+      data: formattedLogs,
     };
   }
 
@@ -139,7 +150,16 @@ export class AuditLogsService {
     page: string,
     query?: { search?: string; startDate?: string; endDate?: string; limit?: number } | number,
   ) {
-    const where: any = { page };
+    const isDashboard = page === 'DASHBOARD' || page === 'TELEGRAM_READY';
+    const where: any = isDashboard
+      ? {
+          OR: [
+            { page: 'DASHBOARD' },
+            { page: 'TELEGRAM_READY' },
+            { action: 'READY', entity_type: 'AttendanceLog' },
+          ],
+        }
+      : { page };
 
     let limit = 100;
 
@@ -172,7 +192,7 @@ export class AuditLogsService {
       }
     }
 
-    return this.prisma.auditLog.findMany({
+    const logs = await this.prisma.auditLog.findMany({
       where,
       include: {
         actor: {
@@ -181,6 +201,17 @@ export class AuditLogsService {
       },
       orderBy: { created_at: 'desc' },
       take: limit,
+    });
+
+    return logs.map((log) => {
+      if (!log.summary && log.action === 'READY') {
+        const actorName = log.actor?.full_name || log.actor?.username || 'Nhân sự';
+        return {
+          ...log,
+          summary: `Nhân viên [${actorName}] đã bấm xác nhận "Tôi đã sẵn sàng" trên Telegram`,
+        };
+      }
+      return log;
     });
   }
 }

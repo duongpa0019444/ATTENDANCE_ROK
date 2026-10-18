@@ -3,10 +3,11 @@ import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Activity, Clock, AlertTriangle, CheckCircle2, Terminal, MapPin, Save, Loader2, Settings, Calendar } from 'lucide-react';
+import { Activity, Clock, AlertTriangle, CheckCircle2, Terminal, MapPin, Save, Loader2, Settings, Calendar, History } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useAttendanceStore, AttendanceStatus } from '@/store/useAttendanceStore';
+import PageHistoryDrawer from '@/components/PageHistoryDrawer';
 import { socket } from '@/lib/socket';
 import { apiFetch } from '@/lib/api';
 import DatePicker, { registerLocale } from 'react-datepicker';
@@ -39,6 +40,7 @@ export default function AdminDashboard() {
   const { staffList, updateStaffStatus, setStaffList } = useAttendanceStore();
   const [time, setTime] = useState('');
   const [alerts, setAlerts] = useState<RealtimeAlert[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Geolocation & operations configuration states
   const [latitude, setLatitude] = useState<number>(21.028511);
@@ -286,6 +288,14 @@ export default function AdminDashboard() {
             <p className="text-slate-400 mt-1">Realtime Operation Center</p>
           </div>
           <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              onClick={() => setIsHistoryOpen(true)}
+              className="bg-slate-900 hover:bg-slate-800 text-cyan-400 hover:text-cyan-300 border border-slate-800 hover:border-cyan-500/30 text-xs font-semibold h-8 px-3 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+            >
+              <History className="w-4 h-4" />
+              <span>LỊCH SỬ XÁC NHẬN CA</span>
+            </Button>
             <div className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-green-500 text-sm font-medium tracking-wider">SYSTEM ONLINE</span>
@@ -506,11 +516,19 @@ export default function AdminDashboard() {
 
             {/* Realtime Alert logs */}
             <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-xl">
-              <CardHeader className="border-b border-slate-800">
+              <CardHeader className="border-b border-slate-800 flex flex-row items-center justify-between pb-3 space-y-0">
                 <CardTitle className="flex items-center gap-2 text-slate-200">
                   <Terminal className="w-5 h-5 text-cyan-400" />
                   Operation Logs
                 </CardTitle>
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryOpen(true)}
+                  className="text-[11px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-sans transition-colors cursor-pointer"
+                >
+                  <History className="w-3 h-3" />
+                  Toàn bộ lịch sử &gt;
+                </button>
               </CardHeader>
               <CardContent className="p-4 space-y-3 max-h-[480px] overflow-y-auto">
                 {alerts.map((alert) => (
@@ -535,6 +553,14 @@ export default function AdminDashboard() {
             </Card>
           </div>
         </div>
+
+        {/* Telegram Confirmation History Drawer */}
+        <PageHistoryDrawer
+          page="DASHBOARD"
+          title="Lịch Sử Xác Nhận Ca (Telegram)"
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+        />
       </div>
     </div>
   );

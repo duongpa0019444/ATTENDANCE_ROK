@@ -381,7 +381,17 @@ export default function AuditLogsPage() {
 
                       {/* Detail action */}
                       <td className="py-3.5 px-4 text-slate-400 font-mono text-[11px] text-right">
-                        {log.metadata ? (
+                        {Boolean(
+                          log.metadata &&
+                          typeof log.metadata === 'object' &&
+                          log.action !== 'READY' &&
+                          (
+                            (Array.isArray(log.metadata.changes) && log.metadata.changes.length > 0) ||
+                            log.action === 'EXCEL_IMPORT' ||
+                            log.metadata.fileName ||
+                            Object.keys(log.metadata).some((k) => k !== 'source')
+                          )
+                        ) ? (
                           <button
                             onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
                             className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-400 hover:text-cyan-300 font-sans text-xs inline-flex items-center gap-1 transition-all border border-slate-700/80 cursor-pointer"
@@ -394,7 +404,7 @@ export default function AuditLogsPage() {
                         )}
                       </td>
                     </tr>
-                    {expandedLogId === log.id && log.metadata && (
+                    {expandedLogId === log.id && log.metadata && log.action !== 'READY' && (
                       <tr className="bg-slate-900/50 border-b border-slate-800/80">
                         <td colSpan={6} className="py-3 px-6 bg-slate-950/60">
                           <LogMetadataDiff metadata={log.metadata} action={log.action} />

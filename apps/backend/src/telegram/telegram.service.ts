@@ -236,18 +236,32 @@ export class TelegramService implements OnModuleInit {
       include: { shift_assignment: { include: { user: true, shift: { include: { server: true } } } } }
     });
 
+    const shift = updatedLog.shift_assignment.shift;
+    const shiftDisplayName = shift.name ? `${shift.server?.name} (${shift.name})` : (shift.server?.name || 'N/A');
+    const day = String(workDate.getDate()).padStart(2, '0');
+    const month = String(workDate.getMonth() + 1).padStart(2, '0');
+    const year = workDate.getFullYear();
+    const formattedDate = `${day}/${month}/${year}`;
+    const staffName = updatedLog.shift_assignment.user.full_name || updatedLog.shift_assignment.user.username;
+
     await this.prisma.auditLog.create({
       data: {
         actor_id: log.user_id,
+        page: 'DASHBOARD',
         action: 'READY',
         entity_type: 'AttendanceLog',
         entity_id: log.id,
-        metadata: { source: 'TELEGRAM' }
+        summary: `Nhân viên [${staffName}] đã xác nhận sẵn sàng vào ca ${shiftDisplayName} (${shift.start_time}) ngày ${formattedDate}`,
+        metadata: {
+          source: 'TELEGRAM',
+          serverName: shift.server?.name || 'N/A',
+          shiftName: shift.name || 'Ca làm',
+          startTime: shift.start_time,
+          endTime: shift.end_time,
+          workDate: formattedDate,
+        }
       }
     });
-
-    const shift = updatedLog.shift_assignment.shift;
-    const shiftDisplayName = shift.name ? `${shift.server?.name} (${shift.name})` : (shift.server?.name || 'N/A');
 
     this.realtimeGateway.notifyDashboard('attendance-updated', {
       id: updatedLog.id,

@@ -20,7 +20,8 @@ import {
   Search,
   Calendar,
   Coins,
-  Sliders
+  Sliders,
+  CheckCircle2
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { format } from 'date-fns';
@@ -45,7 +46,7 @@ interface AuditLogItem {
 }
 
 interface PageHistoryDrawerProps {
-  page: 'SHIFTS' | 'SHIFT_MANAGEMENT' | 'SERVERS' | 'USERS' | 'PAYROLL' | 'SETTINGS';
+  page: 'SHIFTS' | 'SHIFT_MANAGEMENT' | 'SERVERS' | 'USERS' | 'PAYROLL' | 'SETTINGS' | 'DASHBOARD';
   title?: string;
   isOpen: boolean;
   onClose: () => void;
@@ -274,6 +275,12 @@ export default function PageHistoryDrawer({
           icon: <Copy className="w-3.5 h-3.5" />,
           label: 'SAO CHÉP',
           color: 'bg-teal-500/10 text-teal-400 border-teal-500/30',
+        };
+      case 'READY':
+        return {
+          icon: <CheckCircle2 className="w-3.5 h-3.5" />,
+          label: 'SẴN SÀNG',
+          color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
         };
       default:
         return {
@@ -617,19 +624,35 @@ export default function PageHistoryDrawer({
                       </span>
 
                       {/* Expand metadata if available */}
-                      {log.metadata && (
-                        <button
-                          onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                          className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
-                        >
-                          <span>{isExpanded ? 'Ẩn chi tiết' : 'Chi tiết'}</span>
-                          {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                        </button>
-                      )}
+                      {(() => {
+                        const hasMeaningfulDetails = Boolean(
+                          log.metadata &&
+                          typeof log.metadata === 'object' &&
+                          log.action !== 'READY' &&
+                          (
+                            (Array.isArray(log.metadata.changes) && log.metadata.changes.length > 0) ||
+                            log.action === 'EXCEL_IMPORT' ||
+                            log.metadata.fileName ||
+                            Object.keys(log.metadata).some((k) => k !== 'source')
+                          )
+                        );
+
+                        if (!hasMeaningfulDetails) return null;
+
+                        return (
+                          <button
+                            onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                            className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                          >
+                            <span>{isExpanded ? 'Ẩn chi tiết' : 'Chi tiết'}</span>
+                            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     {/* Collapsible Metadata */}
-                    {isExpanded && log.metadata && (
+                    {isExpanded && log.metadata && log.action !== 'READY' && (
                       <div className="mt-2.5 pt-2.5 border-t border-slate-800 text-[11px] overflow-hidden">
                         <LogMetadataDiff metadata={log.metadata} action={log.action} />
                       </div>
