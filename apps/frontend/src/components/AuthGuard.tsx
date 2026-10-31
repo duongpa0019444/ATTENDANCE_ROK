@@ -77,6 +77,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
       // Routing restrictions
       const isStaffRoute = pathname.startsWith('/staff');
+      if (pathname.startsWith('/audit-logs')) {
+        router.push('/');
+        return;
+      }
+
       const isAdminRoute = pathname !== '/login' && pathname !== '/guide' && !isStaffRoute;
 
       if (user.role === 'STAFF' && isAdminRoute) {
@@ -160,7 +165,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 <a href="/users" className={getMenuClass('/users')}>Nhân Sự</a>
                 <a href="/shifts" className={getMenuClass('/shifts')}>Phân Ca</a>
                 <a href="/payroll" className={getMenuClass('/payroll')}>Bảng Lương</a>
-                <a href="/audit-logs" className={getMenuClass('/audit-logs')}>Nhật Ký</a>
+                {/* <a href="/audit-logs" className={getMenuClass('/audit-logs')}>Nhật Ký</a> */}
                 <a href="/guide" className={getMenuClass('/guide')}>Hướng Dẫn</a>
               </>
             )}
@@ -283,7 +288,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                   Bảng Lương
                 </a>
                 <a 
-                  href="/audit-logs" 
+                  href="/audit-logs"
+                  style={{ display: 'none' }} 
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={getMobileMenuClass('/audit-logs')}
                 >

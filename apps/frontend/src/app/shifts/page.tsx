@@ -1318,6 +1318,7 @@ export default function ShiftsPage() {
                     />
 
                     {/* History Drawer Button */}
+                    {false && (
                     <Button
                       variant="outline"
                       onClick={() => setHistoryDrawerType('SHIFTS')}
@@ -1327,6 +1328,7 @@ export default function ShiftsPage() {
                       <History className="w-4 h-4" />
                       Lịch sử
                     </Button>
+                  )}
 
                     {/* Fullscreen Toggle Button */}
                     <Button
@@ -1671,16 +1673,18 @@ export default function ShiftsPage() {
                   <CardTitle className="text-lg font-bold">Danh sách Ca Làm (Khung giờ)</CardTitle>
                   <CardDescription>Danh sách các khung giờ hoạt động được cấu hình theo từng Server.</CardDescription>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setHistoryDrawerType('SHIFT_MANAGEMENT')}
-                  className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium h-9 px-3 rounded-lg flex items-center gap-1.5 transition-all text-xs shrink-0 cursor-pointer"
-                  title="Xem lịch sử cấu hình ca làm"
-                >
-                  <History className="w-4 h-4" />
-                  Lịch sử ca
-                </Button>
+                {false && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setHistoryDrawerType('SHIFT_MANAGEMENT')}
+                    className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium h-9 px-3 rounded-lg flex items-center gap-1.5 transition-all text-xs shrink-0 cursor-pointer"
+                    title="Xem lịch sử cấu hình ca làm"
+                  >
+                    <History className="w-4 h-4" />
+                    Lịch sử ca
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="p-0">
                 {shifts.length === 0 ? (
@@ -1787,16 +1791,18 @@ export default function ShiftsPage() {
                   <CardTitle className="text-lg font-bold">Danh sách Server hoạt động</CardTitle>
                   <CardDescription>Quản lý danh sách các server game có thể phân phối ca làm.</CardDescription>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setHistoryDrawerType('SERVERS')}
-                  className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium h-9 px-3 rounded-lg flex items-center gap-1.5 transition-all text-xs shrink-0 cursor-pointer"
-                  title="Xem lịch sử cấu hình server"
-                >
-                  <History className="w-4 h-4" />
-                  Lịch sử server
-                </Button>
+                {false && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setHistoryDrawerType('SERVERS')}
+                    className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium h-9 px-3 rounded-lg flex items-center gap-1.5 transition-all text-xs shrink-0 cursor-pointer"
+                    title="Xem lịch sử cấu hình server"
+                  >
+                    <History className="w-4 h-4" />
+                    Lịch sử server
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="p-0">
                 {servers.filter((s: any) => !s.name.includes('+')).length === 0 ? (
@@ -2227,7 +2233,7 @@ export default function ShiftsPage() {
 
         {/* Page History Drawer with smooth slide-in/out transitions */}
         <PageHistoryDrawer
-          isOpen={!!historyDrawerType}
+          isOpen={false}
           onClose={() => setHistoryDrawerType(null)}
           page={activeHistoryPage}
           title={

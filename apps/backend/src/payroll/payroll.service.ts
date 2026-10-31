@@ -905,7 +905,8 @@ export class PayrollService {
       updateData.adjustment_percent = Number(body.adjustmentPercent) || 0;
     }
     if (body.adjustmentAmount !== undefined) {
-      updateData.adjustment_amount = Number(body.adjustmentAmount) || 0;
+      const rawAmt = Number(body.adjustmentAmount) || 0;
+      updateData.adjustment_amount = rawAmt !== 0 ? -Math.abs(rawAmt) : 0;
     }
     if (body.otherAllowance !== undefined) {
       updateData.other_allowance = Number(body.otherAllowance) || 0;
@@ -941,7 +942,7 @@ export class PayrollService {
       end_date: end,
       adjustment_percent: Number(body.adjustmentPercent) || 0,
       fund_percent: Number(body.fundPercent) || 0,
-      adjustment_amount: Number(body.adjustmentAmount) || 0,
+      adjustment_amount: body.adjustmentAmount ? (Number(body.adjustmentAmount) !== 0 ? -Math.abs(Number(body.adjustmentAmount)) : 0) : 0,
       other_allowance: Number(body.otherAllowance) || 0,
       note: body.note || null,
     };
@@ -981,15 +982,15 @@ export class PayrollService {
     }
 
     const oldAmount = (oldAdj as any)?.adjustment_amount || 0;
-    const newAmount = body.adjustmentAmount !== undefined ? Number(body.adjustmentAmount) : oldAmount;
+    const newAmount = body.adjustmentAmount !== undefined ? (Number(body.adjustmentAmount) !== 0 ? -Math.abs(Number(body.adjustmentAmount)) : 0) : oldAmount;
     if (newAmount !== oldAmount) {
-      changes.push({ field: 'adjustment_amount', label: 'Tiền thưởng/phạt', old: oldAmount.toLocaleString('vi-VN') + 'đ', new: newAmount.toLocaleString('vi-VN') + 'đ' });
+      changes.push({ field: 'adjustment_amount', label: 'Tiền phạt', old: oldAmount.toLocaleString('vi-VN') + 'đ', new: newAmount.toLocaleString('vi-VN') + 'đ' });
     }
 
     const oldAllowance = (oldAdj as any)?.other_allowance || 0;
     const newAllowance = body.otherAllowance !== undefined ? Number(body.otherAllowance) : oldAllowance;
     if (newAllowance !== oldAllowance) {
-      changes.push({ field: 'other_allowance', label: 'Phụ cấp khác', old: oldAllowance.toLocaleString('vi-VN') + 'đ', new: newAllowance.toLocaleString('vi-VN') + 'đ' });
+      changes.push({ field: 'other_allowance', label: 'Thưởng', old: oldAllowance.toLocaleString('vi-VN') + 'đ', new: newAllowance.toLocaleString('vi-VN') + 'đ' });
     }
 
     const oldFund = (oldAdj as any)?.fund_percent || 0;

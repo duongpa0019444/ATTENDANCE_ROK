@@ -288,6 +288,7 @@ export default function AdminDashboard() {
             <p className="text-slate-400 mt-1">Realtime Operation Center</p>
           </div>
           <div className="flex items-center gap-3">
+            {false && (
             <Button
               type="button"
               onClick={() => setIsHistoryOpen(true)}
@@ -296,6 +297,7 @@ export default function AdminDashboard() {
               <History className="w-4 h-4" />
               <span>LỊCH SỬ XÁC NHẬN CA</span>
             </Button>
+            )}
             <div className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-green-500 text-sm font-medium tracking-wider">SYSTEM ONLINE</span>
@@ -521,14 +523,16 @@ export default function AdminDashboard() {
                   <Terminal className="w-5 h-5 text-cyan-400" />
                   Operation Logs
                 </CardTitle>
-                <button
-                  type="button"
-                  onClick={() => setIsHistoryOpen(true)}
-                  className="text-[11px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-sans transition-colors cursor-pointer"
-                >
-                  <History className="w-3 h-3" />
-                  Toàn bộ lịch sử &gt;
-                </button>
+                {false && (
+                  <button
+                    type="button"
+                    onClick={() => setIsHistoryOpen(true)}
+                    className="text-[11px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-sans transition-colors cursor-pointer"
+                  >
+                    <History className="w-3 h-3" />
+                    Toàn bộ lịch sử &gt;
+                  </button>
+                )}
               </CardHeader>
               <CardContent className="p-4 space-y-3 max-h-[480px] overflow-y-auto">
                 {alerts.map((alert) => (
@@ -558,7 +562,7 @@ export default function AdminDashboard() {
         <PageHistoryDrawer
           page="DASHBOARD"
           title="Lịch Sử Xác Nhận Ca (Telegram)"
-          isOpen={isHistoryOpen}
+          isOpen={false}
           onClose={() => setIsHistoryOpen(false)}
         />
       </div>

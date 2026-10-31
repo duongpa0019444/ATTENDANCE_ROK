@@ -323,15 +323,17 @@ export default function UsersPage() {
           <Button onClick={() => setIsAddDialogOpen(true)} className="bg-cyan-600 hover:bg-cyan-500 text-white flex-1 sm:flex-initial flex items-center justify-center gap-2 h-10 px-4">
             <span>+</span> Thêm User
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => setIsHistoryOpen(true)}
-            className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium flex items-center justify-center gap-2 h-10 px-3.5 rounded-lg shrink-0"
-            title="Xem lịch sử chỉnh sửa nhân sự"
-          >
-            <History className="w-4 h-4" />
-            <span>Lịch sử</span>
-          </Button>
+          {false && (
+            <Button
+              variant="outline"
+              onClick={() => setIsHistoryOpen(true)}
+              className="border-slate-700 bg-slate-900/60 hover:bg-cyan-500/10 hover:border-cyan-500/50 text-cyan-400 font-medium flex items-center justify-center gap-2 h-10 px-3.5 rounded-lg shrink-0"
+              title="Xem lịch sử chỉnh sửa nhân sự"
+            >
+              <History className="w-4 h-4" />
+              <span>Lịch sử</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -707,7 +709,7 @@ export default function UsersPage() {
 
       {/* Page History Drawer */}
       <PageHistoryDrawer
-        isOpen={isHistoryOpen}
+        isOpen={false}
         onClose={() => setIsHistoryOpen(false)}
         page="USERS"
         title="Lịch Sử Quản Lý Nhân Sự"

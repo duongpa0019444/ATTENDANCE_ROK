@@ -187,6 +187,13 @@ export default function StaffPayrollPage() {
                   <div className="text-sm sm:text-base font-bold text-slate-200">{formatVND(payrollData.totalBaseSalary)}</div>
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
+                  <div className="text-slate-400 text-[10px] font-mono leading-none">QUỸ THƯỞNG</div>
+                  <div className="text-sm sm:text-base font-bold text-cyan-400">
+                    {payrollData.fundPercent ? `${payrollData.fundPercent}%` : '0%'}
+                    {payrollData.totalFundShared ? ` (${formatVND(payrollData.totalFundShared)})` : ''}
+                  </div>
+                </Card>
+                <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                   <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP ĐÊM</div>
                   <div className="text-sm sm:text-base font-bold text-cyan-400">{formatVND(payrollData.totalNightBonus)}</div>
                 </Card>
@@ -195,19 +202,8 @@ export default function StaffPayrollPage() {
                   <div className="text-sm sm:text-base font-bold text-indigo-400">{formatVND(payrollData.totalWeekendBonus)}</div>
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                  <div className="text-slate-400 text-[10px] font-mono leading-none">QUỸ THƯỞNG</div>
-                  <div className="text-sm sm:text-base font-bold text-cyan-400">
-                    {payrollData.fundPercent ? `${payrollData.fundPercent}%` : '0%'}
-                    {payrollData.totalFundShared ? ` (${formatVND(payrollData.totalFundShared)})` : ''}
-                  </div>
-                </Card>
-                <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                  <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP KHÁC</div>
-                  <div className="text-sm sm:text-base font-bold text-violet-400">{formatVND(payrollData.totalOtherAllowance)}</div>
-                </Card>
-                <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                   <div className="text-slate-400 text-[10px] font-mono leading-none">
-                    THƯỞNG/PHẠT {payrollData.adjustmentPercent ? `(${payrollData.adjustmentPercent > 0 ? '+' : ''}${payrollData.adjustmentPercent}%)` : '(0%)'}
+                    CHUYÊN CẦN {payrollData.adjustmentPercent ? `(${payrollData.adjustmentPercent > 0 ? '+' : ''}${payrollData.adjustmentPercent}%)` : '(0%)'}
                   </div>
                   <div className={`text-sm sm:text-base font-bold ${
                     (payrollData.adjustmentPercent || 0) > 0
@@ -221,7 +217,11 @@ export default function StaffPayrollPage() {
                   </div>
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                  <div className="text-slate-400 text-[10px] font-mono leading-none">CỘNG THÊM VND</div>
+                  <div className="text-slate-400 text-[10px] font-mono leading-none">THƯỞNG</div>
+                  <div className="text-sm sm:text-base font-bold text-emerald-400">{formatVND(payrollData.totalOtherAllowance)}</div>
+                </Card>
+                <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
+                  <div className="text-slate-400 text-[10px] font-mono leading-none">PHẠT VND</div>
                   <div className={`text-sm sm:text-base font-bold ${
                     ((payrollData as any).adjustmentAmount || 0) > 0
                       ? 'text-emerald-400'
@@ -254,7 +254,7 @@ export default function StaffPayrollPage() {
                         <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Lương ca</TableHead>
                         <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp đêm</TableHead>
                         <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp CT</TableHead>
-                         <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Phụ cấp khác</TableHead>
+                         <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Thưởng</TableHead>
                         <TableHead className="text-[10px] font-mono uppercase text-slate-400 text-right">Tổng nhận</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -273,7 +273,7 @@ export default function StaffPayrollPage() {
                           <TableCell className="text-xs font-mono text-slate-300 text-right">{formatVND(detail.baseSalary)}</TableCell>
                           <TableCell className="text-xs font-mono text-cyan-400 text-right">{formatVND(detail.nightBonus)}</TableCell>
                           <TableCell className="text-xs font-mono text-indigo-400 text-right">{formatVND(detail.weekendBonus)}</TableCell>
-                          <TableCell className="text-xs font-mono text-violet-400 text-right">{formatVND(detail.otherAllowance)}</TableCell>
+                          <TableCell className="text-xs font-mono text-emerald-400 text-right">{formatVND(detail.otherAllowance)}</TableCell>
                           <TableCell className="text-xs font-bold font-mono text-emerald-400 text-right">{formatVND(detail.totalSalary)}</TableCell>
                         </TableRow>
                       ))}
@@ -321,8 +321,8 @@ export default function StaffPayrollPage() {
                           <span className="text-indigo-400">{formatVND(detail.weekendBonus)}</span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block uppercase">PHỤ CẤP KHÁC</span>
-                          <span className="text-violet-400">{formatVND(detail.otherAllowance)}</span>
+                          <span className="text-slate-500 block uppercase">THƯỞNG</span>
+                          <span className="text-emerald-400">{formatVND(detail.otherAllowance)}</span>
                         </div>
                       </div>
                     </CardContent>
