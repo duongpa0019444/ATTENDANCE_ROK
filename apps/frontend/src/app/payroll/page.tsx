@@ -702,12 +702,12 @@ export default function PayrollPage() {
   const exportToCSV = () => {
     // UTF-8 BOM to make sure Excel handles Vietnamese characters correctly
     let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-    csvContent += 'Nhân Viên,Số Ca Làm,Lương Cơ Bản,Quỹ Thưởng (%),Tiền Quỹ Thưởng,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Chuyên Cần (%),Tiền Chuyên Cần,Thưởng,Phạt,Thực Nhận\n';
+    csvContent += 'Nhân Viên,Số Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Quỹ Thưởng (%),Tiền Quỹ Thưởng,Chuyên Cần (%),Tiền Chuyên Cần,Thưởng,Phạt,Thực Nhận\n';
  
     payrollData.forEach((row) => {
       const pctMoney = Math.round(row.totalBaseSalary * ((row.adjustmentPercent || 0) / 100));
       const flatAmount = (row as any).adjustmentAmount || 0;
-      csvContent += `"${row.fullName}","=""${row.completedShifts} / ${row.totalShifts}""",${row.totalBaseSalary},${row.fundPercent || 0},${row.totalFundShared || 0},${row.totalNightBonus},${row.totalWeekendBonus},${row.adjustmentPercent || 0},${pctMoney},${row.totalOtherAllowance},${flatAmount},${row.totalSalary}\n`;
+      csvContent += `"${row.fullName}","=""${row.completedShifts} / ${row.totalShifts}""",${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.fundPercent || 0},${row.totalFundShared || 0},${row.adjustmentPercent || 0},${pctMoney},${row.totalOtherAllowance},${flatAmount},${row.totalSalary}\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -1038,9 +1038,9 @@ export default function PayrollPage() {
                         <TableHead className="text-slate-400 font-mono text-xs uppercase">NHÂN VIÊN</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-center">SỐ CA LÀM</TableHead>
                         <BaseSalaryHead />
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">QUỸ THƯỞNG(%)</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP ĐÊM</TableHead>
                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CUỐI TUẦN</TableHead>
+                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">QUỸ THƯỞNG(%)</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">CHUYÊN CẦN (%)</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">THƯỞNG</TableHead>
                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHẠT</TableHead>
@@ -1068,6 +1068,8 @@ export default function PayrollPage() {
                             <span className="text-emerald-400 font-bold">{staff.completedShifts}</span> / {staff.totalShifts}
                           </TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalBaseSalary)}</TableCell>
+                          <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalNightBonus)}</TableCell>
+                          <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalWeekendBonus)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">
                             <span className={staff.fundPercent && staff.fundPercent !== 0 ? 'text-cyan-400 font-bold' : 'text-slate-400'}>
                               {staff.fundPercent ? `${staff.fundPercent}%` : '0%'}
@@ -1078,8 +1080,6 @@ export default function PayrollPage() {
                               </span>
                             ) : null}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalNightBonus)}</TableCell>
-                          <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalWeekendBonus)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">
                             <span className={staff.adjustmentPercent && staff.adjustmentPercent !== 0 ? (staff.adjustmentPercent > 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold') : 'text-slate-400'}>
                               {staff.adjustmentPercent && staff.adjustmentPercent > 0 ? `+${staff.adjustmentPercent}%` : staff.adjustmentPercent && staff.adjustmentPercent < 0 ? `${staff.adjustmentPercent}%` : '0%'}
@@ -1748,19 +1748,19 @@ export default function PayrollPage() {
                 <strong className="text-sm sm:text-base text-cyan-400">{selectedStaff?.completedShifts} / {selectedStaff?.totalShifts}</strong>
               </div>
               <div>
-                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Quỹ Thưởng</span>
-                <strong className="text-sm sm:text-base text-cyan-400">
-                  {selectedStaff?.fundPercent ? `${selectedStaff.fundPercent}%` : '0%'}
-                  {selectedStaff?.totalFundShared ? ` (${formatVND(selectedStaff.totalFundShared)})` : ''}
-                </strong>
-              </div>
-              <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Phụ Cấp Đêm</span>
                 <strong className="text-sm sm:text-base text-yellow-400">{selectedStaff ? formatVND(selectedStaff.totalNightBonus) : '0đ'}</strong>
               </div>
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Phụ Cấp CT</span>
                 <strong className="text-sm sm:text-base text-orange-400">{selectedStaff ? formatVND(selectedStaff.totalWeekendBonus) : '0đ'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Quỹ Thưởng</span>
+                <strong className="text-sm sm:text-base text-cyan-400">
+                  {selectedStaff?.fundPercent ? `${selectedStaff.fundPercent}%` : '0%'}
+                  {selectedStaff?.totalFundShared ? ` (${formatVND(selectedStaff.totalFundShared)})` : ''}
+                </strong>
               </div>
               <div>
                 <span className="text-slate-400 block font-mono uppercase text-[9px] tracking-wider mb-0.5">Chuyên cần %</span>

@@ -187,19 +187,19 @@ export default function StaffPayrollPage() {
                   <div className="text-sm sm:text-base font-bold text-slate-200">{formatVND(payrollData.totalBaseSalary)}</div>
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
-                  <div className="text-slate-400 text-[10px] font-mono leading-none">QUỸ THƯỞNG</div>
-                  <div className="text-sm sm:text-base font-bold text-cyan-400">
-                    {payrollData.fundPercent ? `${payrollData.fundPercent}%` : '0%'}
-                    {payrollData.totalFundShared ? ` (${formatVND(payrollData.totalFundShared)})` : ''}
-                  </div>
-                </Card>
-                <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                   <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP ĐÊM</div>
                   <div className="text-sm sm:text-base font-bold text-cyan-400">{formatVND(payrollData.totalNightBonus)}</div>
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                   <div className="text-slate-400 text-[10px] font-mono leading-none">PHỤ CẤP CUỐI TUẦN</div>
                   <div className="text-sm sm:text-base font-bold text-indigo-400">{formatVND(payrollData.totalWeekendBonus)}</div>
+                </Card>
+                <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
+                  <div className="text-slate-400 text-[10px] font-mono leading-none">QUỸ THƯỞNG</div>
+                  <div className="text-sm sm:text-base font-bold text-cyan-400">
+                    {payrollData.fundPercent ? `${payrollData.fundPercent}%` : '0%'}
+                    {payrollData.totalFundShared ? ` (${formatVND(payrollData.totalFundShared)})` : ''}
+                  </div>
                 </Card>
                 <Card className="bg-slate-900/50 border-slate-850 p-3 py-2.5 flex flex-col gap-0.5 justify-center">
                   <div className="text-slate-400 text-[10px] font-mono leading-none">
