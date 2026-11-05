@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api';
-import { Check, Copy, Filter, History, Bell, BellOff } from 'lucide-react';
+import { Check, Copy, Filter, History, Bell, BellOff, Loader2 } from 'lucide-react';
 import PageHistoryDrawer from '@/components/PageHistoryDrawer';
 import { toast } from '@/components/ui/toast';
 
@@ -100,6 +100,7 @@ export default function UsersPage() {
   }, []);
 
     const [alertFilter, setAlertFilter] = useState('ALL');
+  const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
 
   const alertOptions = [
     { value: 'ALL', label: 'Tất cả thông báo ca' },
@@ -215,6 +216,8 @@ const roleOptions = [
 
 
   const handleToggleShiftAlert = async (user: any) => {
+    if (togglingUserId) return;
+    setTogglingUserId(user.id);
     const nextValue = !user.receive_shift_alert;
     try {
       const res = await apiFetch(`${API_URL}/users/${user.id}`, {
@@ -245,6 +248,8 @@ const roleOptions = [
       }
     } catch (e) {
       toast.error('Lỗi kết nối khi cập nhật.');
+    } finally {
+      setTogglingUserId(null);
     }
   };
   const handleUpdate = async () => {
@@ -472,11 +477,17 @@ const roleOptions = [
                   <TableCell>
                     <button
                       type="button"
+                      disabled={togglingUserId === u.id}
                       onClick={() => handleToggleShiftAlert(u)}
-                      className="group inline-flex items-center gap-1.5 focus:outline-none"
+                      className="group inline-flex items-center gap-1.5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                       title={u.receive_shift_alert ? "Nhấp để tắt nhận thông báo muộn ca" : "Nhấp để bật nhận thông báo muộn ca"}
                     >
-                      {u.receive_shift_alert ? (
+                      {togglingUserId === u.id ? (
+                        <Badge variant="outline" className="text-cyan-400 border-cyan-500/40 bg-cyan-500/10 flex items-center gap-1 py-0.5 px-2">
+                          <Loader2 className="w-3 h-3 animate-spin text-cyan-400" />
+                          <span className="text-xs">Đang lưu...</span>
+                        </Badge>
+                      ) : u.receive_shift_alert ? (
                         <Badge variant="outline" className="text-cyan-300 border-cyan-500/40 bg-cyan-500/10 group-hover:bg-cyan-500/20 cursor-pointer transition-colors flex items-center gap-1 py-0.5 px-2">
                           <Bell className="w-3 h-3 text-cyan-400" />
                           <span>Bật</span>

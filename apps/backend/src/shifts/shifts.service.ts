@@ -281,6 +281,15 @@ export class ShiftsService {
       }
       if (data.start_time !== undefined && data.start_time !== oldShift.start_time) {
         shiftChanges.push({ field: 'start_time', label: 'Giờ bắt đầu', old: oldShift.start_time, new: data.start_time });
+        // Reset escalation logs for pending logs in this shift so rescheduled time will re-alert
+        await this.prisma.escalationLog.deleteMany({
+          where: {
+            attendance: {
+              shift_assignment: { shift_id: id },
+              status: 'PENDING',
+            },
+          },
+        }).catch(() => {});
       }
       if (data.end_time !== undefined && data.end_time !== oldShift.end_time) {
         shiftChanges.push({ field: 'end_time', label: 'Giờ kết thúc', old: oldShift.end_time || 'Không có', new: data.end_time || 'Không có' });

@@ -20,7 +20,12 @@ export class UsersService {
         role: true,
         status: true,
         receive_shift_alert: true,
-      }
+        created_at: true,
+      },
+      orderBy: [
+        { role: 'asc' },
+        { created_at: 'asc' },
+      ],
     });
   }
 
