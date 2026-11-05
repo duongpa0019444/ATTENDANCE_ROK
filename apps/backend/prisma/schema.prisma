@@ -29,6 +29,7 @@ model User {
   zalo_id            String?
   role               Role               @default(STAFF)
   status             Status             @default(ACTIVE)
+  receive_shift_alert Boolean            @default(false)
   created_at         DateTime           @default(now())
   shift_assignments  ShiftAssignment[]
   attendance_logs    AttendanceLog[]

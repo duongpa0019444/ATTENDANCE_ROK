@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api';
-import { Check, Copy, Filter, History } from 'lucide-react';
+import { Check, Copy, Filter, History, Bell, BellOff } from 'lucide-react';
 import PageHistoryDrawer from '@/components/PageHistoryDrawer';
 import { toast } from '@/components/ui/toast';
 
@@ -80,7 +80,7 @@ const selectStyles = {
 };
 
 export default function UsersPage() {
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [newUser, setNewUser] = useState({ username: '', full_name: '' });
 
   // Add Dialog State
@@ -99,7 +99,15 @@ export default function UsersPage() {
     setMenuPortalTarget(document.body);
   }, []);
 
-  const roleOptions = [
+    const [alertFilter, setAlertFilter] = useState('ALL');
+
+  const alertOptions = [
+    { value: 'ALL', label: 'Tất cả thông báo ca' },
+    { value: 'ENABLED', label: 'Bật nhận cảnh báo ca' },
+    { value: 'DISABLED', label: 'Tắt nhận cảnh báo ca' }
+  ];
+
+const roleOptions = [
     { value: 'ALL', label: 'Tất cả vai trò' },
     { value: 'STAFF', label: 'Nhân viên (STAFF)' },
     { value: 'ADMIN', label: 'Quản lý (ADMIN)' }
@@ -123,7 +131,12 @@ export default function UsersPage() {
       (telegramFilter === 'LINKED' && u.telegram_id) ||
       (telegramFilter === 'UNLINKED' && !u.telegram_id);
 
-    return matchesSearch && matchesRole && matchesTelegram;
+    const matchesAlert =
+      alertFilter === 'ALL' ||
+      (alertFilter === 'ENABLED' && u.receive_shift_alert) ||
+      (alertFilter === 'DISABLED' && !u.receive_shift_alert);
+
+    return matchesSearch && matchesRole && matchesTelegram && matchesAlert;
   });
 
   // Edit State
@@ -196,10 +209,44 @@ export default function UsersPage() {
   };
 
   const openEditDialog = (user: any) => {
-    setEditingUser({ ...user, password: '' });
+    setEditingUser({ ...user, password: '', receive_shift_alert: user.receive_shift_alert || false });
     setIsEditDialogOpen(true);
   };
 
+
+  const handleToggleShiftAlert = async (user: any) => {
+    const nextValue = !user.receive_shift_alert;
+    try {
+      const res = await apiFetch(`${API_URL}/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receive_shift_alert: nextValue,
+        })
+      });
+      if (res.ok) {
+        setUsers((prev: any[]) =>
+          prev.map((u: any) => (u.id === user.id ? { ...u, receive_shift_alert: nextValue } : u))
+        );
+        if (nextValue && !user.telegram_id) {
+          toast.warning(
+            'Đã bật nhận cảnh báo ca',
+            `Lưu ý: [${user.full_name}] chưa liên kết Telegram nên sẽ chưa nhận được tin nhắn cho tới khi liên kết.`
+          );
+        } else {
+          toast.success(
+            nextValue ? 'Đã bật nhận cảnh báo ca' : 'Đã tắt nhận cảnh báo ca',
+            `Tài khoản [${user.full_name}] ${nextValue ? 'sẽ nhận' : 'sẽ không nhận'} thông báo muộn ca qua Telegram.`
+          );
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Thao tác thất bại', err.message || 'Lỗi server');
+      }
+    } catch (e) {
+      toast.error('Lỗi kết nối khi cập nhật.');
+    }
+  };
   const handleUpdate = async () => {
     try {
       const res = await apiFetch(`${API_URL}/users/${editingUser.id}`, {
@@ -339,7 +386,7 @@ export default function UsersPage() {
 
       <Card className="bg-slate-900 border-slate-800 text-slate-100 hidden md:block">
 
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-1">
             <label className="text-xs text-slate-400">Tìm kiếm</label>
             <Input
@@ -371,6 +418,17 @@ export default function UsersPage() {
               menuPortalTarget={menuPortalTarget}
             />
           </div>
+          <div className="space-y-1 text-slate-900">
+            <label className="text-xs text-slate-400">Báo muộn ca</label>
+            <Select
+              instanceId="filter-alert-select"
+              options={alertOptions}
+              styles={selectStyles}
+              value={alertOptions.find(o => o.value === alertFilter)}
+              onChange={(selected: any) => setAlertFilter(selected.value)}
+              menuPortalTarget={menuPortalTarget}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -385,6 +443,7 @@ export default function UsersPage() {
                 <TableHead className="text-slate-400">Họ tên</TableHead>
                 <TableHead className="text-slate-400">Telegram</TableHead>
                 <TableHead className="text-slate-400">Vai trò</TableHead>
+                <TableHead className="text-slate-400">Báo muộn ca</TableHead>
                 <TableHead className="text-slate-400 text-right">Thao tác</TableHead>
               </TableRow>
             </TableHeader>
@@ -409,6 +468,26 @@ export default function UsersPage() {
                     <Badge variant="outline" className={u.role === 'ADMIN' ? 'text-purple-400 border-purple-500/30' : 'text-slate-400 border-slate-600'}>
                       {u.role}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleShiftAlert(u)}
+                      className="group inline-flex items-center gap-1.5 focus:outline-none"
+                      title={u.receive_shift_alert ? "Nhấp để tắt nhận thông báo muộn ca" : "Nhấp để bật nhận thông báo muộn ca"}
+                    >
+                      {u.receive_shift_alert ? (
+                        <Badge variant="outline" className="text-cyan-300 border-cyan-500/40 bg-cyan-500/10 group-hover:bg-cyan-500/20 cursor-pointer transition-colors flex items-center gap-1 py-0.5 px-2">
+                          <Bell className="w-3 h-3 text-cyan-400" />
+                          <span>Bật</span>
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-slate-400 border-slate-700 bg-slate-800/60 group-hover:bg-slate-700/60 cursor-pointer transition-colors flex items-center gap-1 py-0.5 px-2">
+                          <BellOff className="w-3 h-3 text-slate-500" />
+                          <span>Tắt</span>
+                        </Badge>
+                      )}
+                    </button>
                   </TableCell>
                   <TableCell className="text-right space-x-2">
                     {!u.telegram_id && (
@@ -538,6 +617,17 @@ export default function UsersPage() {
                 menuPortalTarget={menuPortalTarget}
               />
             </div>
+            <div className="space-y-1 text-slate-900">
+              <label className="text-xs text-slate-400 font-medium">Báo muộn ca</label>
+              <Select
+                instanceId="mobile-filter-alert-select"
+                options={alertOptions}
+                styles={selectStyles}
+                value={alertOptions.find(o => o.value === alertFilter)}
+                onChange={(selected: any) => setAlertFilter(selected.value)}
+                menuPortalTarget={menuPortalTarget}
+              />
+            </div>
           </div>
           <div className="flex justify-between items-center gap-3 pt-2 border-t border-slate-800">
             <Button
@@ -546,6 +636,7 @@ export default function UsersPage() {
                 setSearchTerm('');
                 setRoleFilter('ALL');
                 setTelegramFilter('ALL');
+                setAlertFilter('ALL');
                 setIsFilterDialogOpen(false);
               }}
               className="text-slate-400 hover:text-white hover:bg-slate-800"

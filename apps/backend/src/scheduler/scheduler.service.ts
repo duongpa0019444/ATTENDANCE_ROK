@@ -122,7 +122,7 @@ export class SchedulerService {
       }
 
       // 2. T -warning (Escalation L1 to admin if employee did not confirm)
-      if (diffMins === totalWarningMins) {
+      if (diffMins <= totalWarningMins && diffMins >= -180) {
         if (log.status === 'PENDING') {
           // Escalation Level 1
           const existingEsc = await this.prisma.escalationLog.findFirst({
@@ -135,7 +135,7 @@ export class SchedulerService {
 
             // Alert manager via Telegram
             const alertMsg = `⚠️ CẢNH BÁO: Nông dân [${assignment.user.full_name}] chưa xác nhận ca làm [${shiftDisplayName}] ngày ${dateStr} (bắt đầu lúc ${assignment.shift.start_time}).`;
-            await this.queueManagersNotification(alertMsg);
+            await this.queueShiftAlertNotification(alertMsg);
 
             // Realtime Socket warning event
             this.realtimeGateway.notifyDashboard('attendance-warning', {
@@ -178,6 +178,25 @@ export class SchedulerService {
     }
 
     return false;
+  }
+
+  private async queueShiftAlertNotification(message: string) {
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        receive_shift_alert: true,
+        status: 'ACTIVE',
+        telegram_id: { not: null },
+      },
+    });
+    for (const recipient of recipients) {
+      if (recipient.telegram_id) {
+        await this.queueService.addNotificationJob({
+          type: 'TEXT',
+          chatId: recipient.telegram_id,
+          data: { message },
+        });
+      }
+    }
   }
 
   private async queueManagersNotification(message: string) {

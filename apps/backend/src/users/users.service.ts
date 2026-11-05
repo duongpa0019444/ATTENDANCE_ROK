@@ -19,6 +19,7 @@ export class UsersService {
         telegram_id: true,
         role: true,
         status: true,
+        receive_shift_alert: true,
       }
     });
   }
@@ -32,6 +33,7 @@ export class UsersService {
         full_name: data.full_name,
         telegram_id: data.telegram_id || null,
         role: data.role || 'STAFF',
+        receive_shift_alert: data.receive_shift_alert !== undefined ? Boolean(data.receive_shift_alert) : false,
       },
       select: {
         id: true,
@@ -39,6 +41,7 @@ export class UsersService {
         full_name: true,
         role: true,
         telegram_id: true,
+        receive_shift_alert: true,
       }
     });
 
@@ -55,6 +58,7 @@ export class UsersService {
           'Tên đăng nhập': user.username,
           'Vai trò': user.role,
           'Telegram ID': user.telegram_id || 'Chưa liên kết',
+          'Nhận thông báo ca': user.receive_shift_alert ? 'Bật' : 'Tắt',
         }
       },
     });
@@ -110,7 +114,7 @@ export class UsersService {
   async update(id: string, data: any, actorId?: string) {
     const oldUser = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, username: true, full_name: true, role: true, telegram_id: true }
+      select: { id: true, username: true, full_name: true, role: true, telegram_id: true, receive_shift_alert: true }
     });
 
     if (!oldUser) {
@@ -131,6 +135,7 @@ export class UsersService {
     if (data.full_name !== undefined) updateData.full_name = data.full_name;
     if (data.role !== undefined) updateData.role = data.role;
     if (data.telegram_id !== undefined) updateData.telegram_id = data.telegram_id || null;
+    if (data.receive_shift_alert !== undefined) updateData.receive_shift_alert = Boolean(data.receive_shift_alert);
 
     if (data.password) {
       updateData.password = await bcrypt.hash(data.password, 10);
@@ -139,7 +144,7 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: updateData,
-      select: { id: true, username: true, full_name: true, role: true, telegram_id: true }
+      select: { id: true, username: true, full_name: true, role: true, telegram_id: true, receive_shift_alert: true }
     });
 
     const changes: Array<{ field: string; label: string; old: any; new: any }> = [];
@@ -162,6 +167,14 @@ export class UsersService {
     }
     if (data.password) {
       changes.push({ field: 'password', label: 'Mật khẩu', old: '••••••', new: '•••••• (Đã đổi)' });
+    }
+    if (data.receive_shift_alert !== undefined && Boolean(data.receive_shift_alert) !== oldUser.receive_shift_alert) {
+      changes.push({
+        field: 'receive_shift_alert',
+        label: 'Nhận thông báo ca',
+        old: oldUser.receive_shift_alert ? 'Bật' : 'Tắt',
+        new: Boolean(data.receive_shift_alert) ? 'Bật' : 'Tắt',
+      });
     }
 
     if (changes.length > 0) {
