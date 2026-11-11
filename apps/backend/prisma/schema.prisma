@@ -36,6 +36,7 @@ model User {
   notifications      Notification[]
   audit_logs         AuditLog[]
   payroll_adjustments PayrollAdjustment[]
+  salary_histories   UserSalaryHistory[]
 
   @@map("users")
 }
@@ -74,6 +75,19 @@ model ServerSalaryHistory {
 
   @@unique([server_id, start_date])
   @@map("server_salary_histories")
+}
+
+model UserSalaryHistory {
+  id                 String    @id @default(uuid())
+  user_id            String
+  custom_base_salary Float?
+  start_date         DateTime  @db.Date
+  created_at         DateTime  @default(now())
+
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, start_date])
+  @@map("user_salary_histories")
 }
 
 model Shift {

@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +13,8 @@ import {
   Calendar, Download, Settings, Save,
   Server, Clock, Loader2, Sparkles, ArrowRight,
   Lock, Unlock, ShieldAlert, ChevronLeft, ChevronRight,
-  Plus, Trash2, Edit2, Maximize2, Minimize2, Eye, Sliders, History
+  Plus, Trash2, Edit2, Maximize2, Minimize2, Eye, Sliders, History, Pencil, Coins, Check,
+  ArrowUpDown, ArrowUp, ArrowDown, Filter, RotateCcw, Search, X
 } from 'lucide-react';
 import PageHistoryDrawer from '@/components/PageHistoryDrawer';
 import { toast } from '@/components/ui/toast';
@@ -84,6 +86,9 @@ interface PayrollRecord {
   totalShiftReward: number;
   totalSalary: number;
   details: PayrollDetail[];
+  customBaseSalary?: number | null;
+  isCustomRate?: boolean;
+  effectiveBaseRate?: number;
   adjustmentPercent?: number;
   totalAdjustment?: number;
   adjustmentNote?: string;
@@ -197,6 +202,277 @@ export default function PayrollPage() {
   const [isSavingServerSalary, setIsSavingServerSalary] = useState<boolean>(false);
 
   // States for Thong/Phat % adjustment
+  // Custom Base Salary Dialog States
+  const [isSalaryDialogOpen, setIsSalaryDialogOpen] = useState<boolean>(false);
+  const [salaryStaff, setSalaryStaff] = useState<PayrollRecord | null>(null);
+  const [useCustomSalary, setUseCustomSalary] = useState<boolean>(false);
+  const [customSalaryInput, setCustomSalaryInput] = useState<string>('');
+  const [isSavingCustomSalary, setIsSavingCustomSalary] = useState<boolean>(false);
+
+  const openCustomSalaryDialog = (staff: PayrollRecord) => {
+    setSalaryStaff(staff);
+    if (staff.isCustomRate && staff.customBaseSalary !== null && staff.customBaseSalary !== undefined) {
+      setUseCustomSalary(true);
+      setCustomSalaryInput(formatNumberWithCommas(String(staff.customBaseSalary)));
+    } else {
+      setUseCustomSalary(false);
+      setCustomSalaryInput(formatNumberWithCommas(String(staff.effectiveBaseRate || systemSettings.defaultServerSalary || 100000)));
+    }
+    setIsSalaryDialogOpen(true);
+  };
+
+  const handleSaveCustomSalary = async () => {
+    if (!salaryStaff) return;
+    setIsSavingCustomSalary(true);
+    try {
+      const cleanVal = useCustomSalary
+        ? parseFloat(customSalaryInput.replace(/,/g, '')) || 0
+        : null;
+
+      const res = await apiFetch(`${API_URL}/payroll/custom-base-salary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: salaryStaff.userId,
+          startDate: startDate,
+          customBaseSalary: cleanVal,
+        }),
+      });
+
+      if (res.ok) {
+        toast.success(
+          'Đã cập nhật đơn giá lương',
+          useCustomSalary
+            ? `Đã đặt đơn giá riêng cho [${salaryStaff.fullName}]: ${formatVND(cleanVal || 0)}/ca (áp dụng từ tuần ${formatDateVi(startDate)} trở đi).`
+            : `Đã chuyển [${salaryStaff.fullName}] về đơn giá chung theo cấu hình (áp dụng từ tuần ${formatDateVi(startDate)} trở đi).`
+        );
+        setIsSalaryDialogOpen(false);
+        setSalaryStaff(null);
+        fetchPayroll();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error('Lỗi khi lưu đơn giá', err.message || 'Lỗi server');
+      }
+    } catch (e) {
+      toast.error('Lỗi kết nối khi cập nhật đơn giá.');
+    } finally {
+      setIsSavingCustomSalary(false);
+    }
+  };
+
+  // --- Table Column Filter & Sort States ---
+  const [isMounted, setIsMounted] = useState<boolean>(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  interface ColumnFilters {
+    sortKey: string | null;
+    sortDirection: 'asc' | 'desc' | null;
+    staffSearch: string;
+    roleFilter: 'ALL' | 'ADMIN' | 'STAFF';
+    shiftsFilter: 'ALL' | 'HAS_SHIFTS' | 'NO_SHIFTS';
+    baseSalaryFilter: 'ALL' | 'CUSTOM' | 'DEFAULT';
+    nightBonusFilter: 'ALL' | 'HAS_BONUS' | 'NO_BONUS';
+    weekendBonusFilter: 'ALL' | 'HAS_BONUS' | 'NO_BONUS';
+    fundFilter: 'ALL' | 'HAS_FUND' | 'NO_FUND';
+    adjFilter: 'ALL' | 'POSITIVE' | 'NEGATIVE' | 'ZERO';
+    rewardFilter: 'ALL' | 'HAS_REWARD' | 'NO_REWARD';
+    penaltyFilter: 'ALL' | 'HAS_PENALTY' | 'NO_PENALTY';
+    totalSalaryFilter: 'ALL' | 'HAS_SALARY' | 'ZERO_SALARY';
+  }
+
+  const initialColumnFilters: ColumnFilters = {
+    sortKey: null,
+    sortDirection: null,
+    staffSearch: '',
+    roleFilter: 'ALL',
+    shiftsFilter: 'ALL',
+    baseSalaryFilter: 'ALL',
+    nightBonusFilter: 'ALL',
+    weekendBonusFilter: 'ALL',
+    fundFilter: 'ALL',
+    adjFilter: 'ALL',
+    rewardFilter: 'ALL',
+    penaltyFilter: 'ALL',
+    totalSalaryFilter: 'ALL',
+  };
+
+  const [colFilters, setColFilters] = useState<ColumnFilters>(initialColumnFilters);
+  const [activePopover, setActivePopover] = useState<{
+    colKey: string;
+    top: number;
+    left?: number;
+    right?: number;
+  } | null>(null);
+
+  const checkIsFiltered = (colKey: string): boolean => {
+    switch (colKey) {
+      case 'staff':
+        return colFilters.staffSearch.trim() !== '' || colFilters.roleFilter !== 'ALL';
+      case 'shifts':
+        return colFilters.shiftsFilter !== 'ALL';
+      case 'baseSalary':
+        return colFilters.baseSalaryFilter !== 'ALL';
+      case 'nightBonus':
+        return colFilters.nightBonusFilter !== 'ALL';
+      case 'weekendBonus':
+        return colFilters.weekendBonusFilter !== 'ALL';
+      case 'fundPercent':
+        return colFilters.fundFilter !== 'ALL';
+      case 'adjPercent':
+        return colFilters.adjFilter !== 'ALL';
+      case 'reward':
+        return colFilters.rewardFilter !== 'ALL';
+      case 'penalty':
+        return colFilters.penaltyFilter !== 'ALL';
+      case 'totalSalary':
+        return colFilters.totalSalaryFilter !== 'ALL';
+      default:
+        return false;
+    }
+  };
+
+  const isAnyFilterOrSortActive =
+    colFilters.sortKey !== null ||
+    [
+      'staff',
+      'shifts',
+      'baseSalary',
+      'nightBonus',
+      'weekendBonus',
+      'fundPercent',
+      'adjPercent',
+      'reward',
+      'penalty',
+      'totalSalary',
+    ].some(checkIsFiltered);
+
+  const handleResetAllFilters = () => {
+    setColFilters(initialColumnFilters);
+    setActivePopover(null);
+  };
+
+  const handleResetCol = (colKey: string) => {
+    setColFilters((prev) => {
+      const next = { ...prev };
+      if (next.sortKey === colKey) {
+        next.sortKey = null;
+        next.sortDirection = null;
+      }
+      switch (colKey) {
+        case 'staff':
+          next.staffSearch = '';
+          next.roleFilter = 'ALL';
+          break;
+        case 'shifts':
+          next.shiftsFilter = 'ALL';
+          break;
+        case 'baseSalary':
+          next.baseSalaryFilter = 'ALL';
+          break;
+        case 'nightBonus':
+          next.nightBonusFilter = 'ALL';
+          break;
+        case 'weekendBonus':
+          next.weekendBonusFilter = 'ALL';
+          break;
+        case 'fundPercent':
+          next.fundFilter = 'ALL';
+          break;
+        case 'adjPercent':
+          next.adjFilter = 'ALL';
+          break;
+        case 'reward':
+          next.rewardFilter = 'ALL';
+          break;
+        case 'penalty':
+          next.penaltyFilter = 'ALL';
+          break;
+        case 'totalSalary':
+          next.totalSalaryFilter = 'ALL';
+          break;
+      }
+      return next;
+    });
+  };
+
+  const handleSetSort = (colKey: string, dir: 'asc' | 'desc') => {
+    setColFilters((prev) => {
+      if (prev.sortKey === colKey && prev.sortDirection === dir) {
+        return { ...prev, sortKey: null, sortDirection: null };
+      }
+      return { ...prev, sortKey: colKey, sortDirection: dir };
+    });
+  };
+
+  const handleOpenFilter = (
+    colKey: string,
+    e: React.MouseEvent<HTMLElement>,
+    align: 'left' | 'center' | 'right' = 'right'
+  ) => {
+    e.stopPropagation();
+    if (activePopover?.colKey === colKey) {
+      setActivePopover(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const menuWidth = 240;
+    const top = rect.bottom + window.scrollY + 6;
+    let left: number | undefined;
+    let right: number | undefined;
+
+    if (align === 'right') {
+      const rightDist = window.innerWidth - rect.right - window.scrollX;
+      right = Math.max(10, rightDist);
+    } else if (align === 'center') {
+      left = Math.max(10, rect.left + rect.width / 2 - menuWidth / 2 + window.scrollX);
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = undefined;
+        right = 10;
+      }
+    } else {
+      left = Math.max(10, rect.left + window.scrollX);
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = undefined;
+        right = 10;
+      }
+    }
+
+    setActivePopover({ colKey, top, left, right });
+  };
+
+  useEffect(() => {
+    if (!activePopover) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      const popoverEl = document.getElementById('table-filter-popover');
+      if (popoverEl && !popoverEl.contains(e.target as Node)) {
+        setActivePopover(null);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActivePopover(null);
+    };
+    const handleScrollOrResize = (e: Event) => {
+      const popoverEl = document.getElementById('table-filter-popover');
+      if (popoverEl && popoverEl.contains(e.target as Node)) {
+        return;
+      }
+      setActivePopover(null);
+    };
+
+    window.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('keydown', handleEsc);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      window.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('keydown', handleEsc);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [activePopover]);
+
   const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState<boolean>(false);
   const [adjustingStaff, setAdjustingStaff] = useState<PayrollRecord | null>(null);
   const [adjustmentPercentInput, setAdjustmentPercentInput] = useState<string>('');
@@ -704,7 +980,7 @@ export default function PayrollPage() {
     let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
     csvContent += 'Nhân Viên,Số Ca Làm,Lương Cơ Bản,Phụ Cấp Đêm,Phụ Cấp Cuối Tuần,Quỹ Thưởng (%),Tiền Quỹ Thưởng,Chuyên Cần (%),Tiền Chuyên Cần,Thưởng,Phạt,Thực Nhận\n';
  
-    payrollData.forEach((row) => {
+    displayedPayrollData.forEach((row) => {
       const pctMoney = Math.round(row.totalBaseSalary * ((row.adjustmentPercent || 0) / 100));
       const flatAmount = (row as any).adjustmentAmount || 0;
       csvContent += `"${row.fullName}","=""${row.completedShifts} / ${row.totalShifts}""",${row.totalBaseSalary},${row.totalNightBonus},${row.totalWeekendBonus},${row.fundPercent || 0},${row.totalFundShared || 0},${row.adjustmentPercent || 0},${pctMoney},${row.totalOtherAllowance},${flatAmount},${row.totalSalary}\n`;
@@ -738,6 +1014,136 @@ export default function PayrollPage() {
     return parseFloat(clean) || 0;
   };
 
+  // Filtered and Sorted Payroll Data
+  const displayedPayrollData = useMemo(() => {
+    let list = [...payrollData];
+
+    // 1. Staff search
+    if (colFilters.staffSearch.trim()) {
+      const q = colFilters.staffSearch.trim().toLowerCase();
+      list = list.filter(
+        (s) =>
+          (s.fullName || '').toLowerCase().includes(q) ||
+          (s.username || '').toLowerCase().includes(q)
+      );
+    }
+
+    // 2. Role filter
+    if (colFilters.roleFilter !== 'ALL') {
+      list = list.filter((s) => s.role === colFilters.roleFilter);
+    }
+
+    // 3. Shifts filter
+    if (colFilters.shiftsFilter === 'HAS_SHIFTS') {
+      list = list.filter((s) => s.completedShifts > 0);
+    } else if (colFilters.shiftsFilter === 'NO_SHIFTS') {
+      list = list.filter((s) => s.completedShifts === 0);
+    }
+
+    // 4. Base salary filter
+    if (colFilters.baseSalaryFilter === 'CUSTOM') {
+      list = list.filter((s) => !!s.isCustomRate);
+    } else if (colFilters.baseSalaryFilter === 'DEFAULT') {
+      list = list.filter((s) => !s.isCustomRate);
+    }
+
+    // 5. Night bonus filter
+    if (colFilters.nightBonusFilter === 'HAS_BONUS') {
+      list = list.filter((s) => s.totalNightBonus > 0);
+    } else if (colFilters.nightBonusFilter === 'NO_BONUS') {
+      list = list.filter((s) => s.totalNightBonus === 0);
+    }
+
+    // 6. Weekend bonus filter
+    if (colFilters.weekendBonusFilter === 'HAS_BONUS') {
+      list = list.filter((s) => s.totalWeekendBonus > 0);
+    } else if (colFilters.weekendBonusFilter === 'NO_BONUS') {
+      list = list.filter((s) => s.totalWeekendBonus === 0);
+    }
+
+    // 7. Fund filter
+    if (colFilters.fundFilter === 'HAS_FUND') {
+      list = list.filter((s) => (s.fundPercent || 0) > 0 || (s.totalFundShared || 0) > 0);
+    } else if (colFilters.fundFilter === 'NO_FUND') {
+      list = list.filter((s) => (s.fundPercent || 0) === 0 && (s.totalFundShared || 0) === 0);
+    }
+
+    // 8. Adjustment / Chuyên cần filter
+    if (colFilters.adjFilter === 'POSITIVE') {
+      list = list.filter((s) => (s.adjustmentPercent || 0) > 0);
+    } else if (colFilters.adjFilter === 'NEGATIVE') {
+      list = list.filter((s) => (s.adjustmentPercent || 0) < 0);
+    } else if (colFilters.adjFilter === 'ZERO') {
+      list = list.filter((s) => (s.adjustmentPercent || 0) === 0);
+    }
+
+    // 9. Reward filter
+    if (colFilters.rewardFilter === 'HAS_REWARD') {
+      list = list.filter((s) => (s.totalOtherAllowance || 0) > 0);
+    } else if (colFilters.rewardFilter === 'NO_REWARD') {
+      list = list.filter((s) => (s.totalOtherAllowance || 0) <= 0);
+    }
+
+    // 10. Penalty filter
+    if (colFilters.penaltyFilter === 'HAS_PENALTY') {
+      list = list.filter((s) => ((s as any).adjustmentAmount || 0) < 0);
+    } else if (colFilters.penaltyFilter === 'NO_PENALTY') {
+      list = list.filter((s) => ((s as any).adjustmentAmount || 0) >= 0);
+    }
+
+    // 11. Total salary filter
+    if (colFilters.totalSalaryFilter === 'HAS_SALARY') {
+      list = list.filter((s) => s.totalSalary > 0);
+    } else if (colFilters.totalSalaryFilter === 'ZERO_SALARY') {
+      list = list.filter((s) => s.totalSalary === 0);
+    }
+
+    // Sorting
+    if (colFilters.sortKey && colFilters.sortDirection) {
+      const dir = colFilters.sortDirection === 'asc' ? 1 : -1;
+      list.sort((a, b) => {
+        switch (colFilters.sortKey) {
+          case 'staff': {
+            const getNamePart = (fullName: string) => {
+              const afterDot = (fullName || '').trim().split('.').pop() || '';
+              return afterDot.trim().split(/\s+/).pop() || '';
+            };
+            const nameA = getNamePart(a.fullName);
+            const nameB = getNamePart(b.fullName);
+            const cmp = nameA.localeCompare(nameB, 'vi', { sensitivity: 'accent' });
+            if (cmp !== 0) return cmp * dir;
+            return (a.fullName || '').localeCompare(b.fullName || '', 'vi', { sensitivity: 'accent' }) * dir;
+          }
+          case 'shifts':
+            return (a.completedShifts - b.completedShifts) * dir;
+          case 'baseSalary':
+            return (a.totalBaseSalary - b.totalBaseSalary) * dir;
+          case 'nightBonus':
+            return (a.totalNightBonus - b.totalNightBonus) * dir;
+          case 'weekendBonus':
+            return (a.totalWeekendBonus - b.totalWeekendBonus) * dir;
+          case 'fundPercent':
+            return ((a.fundPercent || 0) - (b.fundPercent || 0)) * dir;
+          case 'adjPercent':
+            return ((a.adjustmentPercent || 0) - (b.adjustmentPercent || 0)) * dir;
+          case 'reward':
+            return ((a.totalOtherAllowance || 0) - (b.totalOtherAllowance || 0)) * dir;
+          case 'penalty': {
+            const penA = Math.abs(Math.min(0, (a as any).adjustmentAmount || 0));
+            const penB = Math.abs(Math.min(0, (b as any).adjustmentAmount || 0));
+            return (penA - penB) * dir;
+          }
+          case 'totalSalary':
+            return (a.totalSalary - b.totalSalary) * dir;
+          default:
+            return 0;
+        }
+      });
+    }
+
+    return list;
+  }, [payrollData, colFilters]);
+
   // Aggregated Summary values
   const totalPayrollCost = payrollData.reduce((acc, curr) => acc + curr.totalSalary, 0);
   const totalCompletedShifts = payrollData.reduce((acc, curr) => acc + curr.completedShifts, 0);
@@ -758,6 +1164,355 @@ export default function PayrollPage() {
     name: shift.name,
     startTime: shift.start_time,
   }));
+
+  const getPopoverTitle = (colKey: string): string => {
+    switch (colKey) {
+      case 'staff': return 'Nhân Viên';
+      case 'shifts': return 'Số Ca Làm';
+      case 'baseSalary': return 'Lương Cơ Bản';
+      case 'nightBonus': return 'Phụ Cấp Đêm';
+      case 'weekendBonus': return 'Phụ Cấp Cuối Tuần';
+      case 'fundPercent': return 'Quỹ Thưởng (%)';
+      case 'adjPercent': return 'Chuyên Cần (%)';
+      case 'reward': return 'Thưởng Khác';
+      case 'penalty': return 'Phạt Khác';
+      case 'totalSalary': return 'Thực Nhận';
+      default: return 'Cột';
+    }
+  };
+
+  const getSortLabel = (colKey: string, dir: 'asc' | 'desc'): string => {
+    if (colKey === 'staff') {
+      return dir === 'asc' ? 'Tên A → Z' : 'Tên Z → A';
+    }
+    if (colKey === 'shifts') {
+      return dir === 'asc' ? 'Ít ca → Nhiều ca' : 'Nhiều ca → Ít ca';
+    }
+    if (colKey === 'penalty') {
+      return dir === 'asc' ? 'Phạt ít → Phạt nhiều' : 'Phạt nhiều → Phạt ít';
+    }
+    return dir === 'asc' ? 'Thấp → Cao' : 'Cao → Thấp';
+  };
+
+  const renderFilterBody = (colKey: string) => {
+    switch (colKey) {
+      case 'staff':
+        return (
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={colFilters.staffSearch}
+                onChange={(e) => setColFilters((f) => ({ ...f, staffSearch: e.target.value }))}
+                placeholder="Tìm theo tên..."
+                className="bg-slate-950 border-slate-700 pl-8 pr-7 py-1 h-8 text-xs text-slate-200"
+              />
+              {colFilters.staffSearch && (
+                <button
+                  type="button"
+                  onClick={() => setColFilters((f) => ({ ...f, staffSearch: '' }))}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            <div className="space-y-1 pt-1">
+              <div className="text-[10px] text-slate-400 font-mono">Vai trò:</div>
+              {[
+                { value: 'ALL', label: 'Tất cả vai trò' },
+                { value: 'ADMIN', label: 'Quản trị viên (ADMIN)' },
+                { value: 'STAFF', label: 'Nhân viên (STAFF)' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setColFilters((f) => ({ ...f, roleFilter: opt.value as any }))}
+                  className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                    colFilters.roleFilter === opt.value
+                      ? 'bg-slate-800 text-cyan-400 font-medium'
+                      : 'hover:bg-slate-800/60 text-slate-300'
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  {colFilters.roleFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+
+      case 'shifts':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'HAS_SHIFTS', label: 'Có ca làm (> 0 ca)' },
+              { value: 'NO_SHIFTS', label: 'Chưa có ca làm (= 0)' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, shiftsFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.shiftsFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.shiftsFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      case 'baseSalary':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'CUSTOM', label: 'Đơn giá riêng (Tùy chỉnh)' },
+              { value: 'DEFAULT', label: 'Đơn giá mặc định' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, baseSalaryFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.baseSalaryFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.baseSalaryFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      case 'nightBonus':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'HAS_BONUS', label: 'Có phụ cấp đêm (> 0đ)' },
+              { value: 'NO_BONUS', label: 'Không có phụ cấp đêm (0đ)' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, nightBonusFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.nightBonusFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.nightBonusFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      case 'weekendBonus':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'HAS_BONUS', label: 'Có phụ cấp cuối tuần (> 0đ)' },
+              { value: 'NO_BONUS', label: 'Không có phụ cấp (0đ)' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, weekendBonusFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.weekendBonusFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.weekendBonusFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      case 'fundPercent':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'HAS_FUND', label: 'Có chia quỹ (> 0%)' },
+              { value: 'NO_FUND', label: 'Không chia quỹ (0%)' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, fundFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.fundFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.fundFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      case 'adjPercent':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'POSITIVE', label: 'Thưởng chuyên cần (+%)' },
+              { value: 'NEGATIVE', label: 'Bị phạt chuyên cần (-%)' },
+              { value: 'ZERO', label: 'Mức chuẩn (0%)' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, adjFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.adjFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.adjFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      case 'reward':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'HAS_REWARD', label: 'Có thưởng (> 0đ)' },
+              { value: 'NO_REWARD', label: 'Không có thưởng (0đ)' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, rewardFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.rewardFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.rewardFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      case 'penalty':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'HAS_PENALTY', label: 'Bị phạt (< 0đ)' },
+              { value: 'NO_PENALTY', label: 'Không bị phạt (0đ)' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, penaltyFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.penaltyFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.penaltyFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      case 'totalSalary':
+        return (
+          <div className="space-y-1">
+            {[
+              { value: 'ALL', label: 'Tất cả' },
+              { value: 'HAS_SALARY', label: 'Có thực nhận (> 0đ)' },
+              { value: 'ZERO_SALARY', label: 'Thực nhận = 0đ' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setColFilters((f) => ({ ...f, totalSalaryFilter: opt.value as any }))}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded transition-colors text-left ${
+                  colFilters.totalSalaryFilter === opt.value
+                    ? 'bg-slate-800 text-cyan-400 font-medium'
+                    : 'hover:bg-slate-800/60 text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {colFilters.totalSalaryFilter === opt.value && <Check className="w-3 h-3 text-cyan-400" />}
+              </button>
+            ))}
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const renderHeaderWithFilter = (
+    colKey: string,
+    title: string,
+    align: 'left' | 'center' | 'right' = 'right',
+    extraTitleClass: string = ''
+  ) => {
+    const isSorted = colFilters.sortKey === colKey;
+    const isFiltered = checkIsFiltered(colKey);
+    const isActive = isSorted || isFiltered;
+
+    return (
+      <TableHead
+        className={`text-slate-400 font-mono text-[11px] uppercase py-2 px-1.5 select-none ${
+          align === 'left' ? 'text-left' : align === 'center' ? 'text-center' : 'text-right'
+        } ${extraTitleClass}`}
+      >
+        <button
+          type="button"
+          onClick={(e) => handleOpenFilter(colKey, e, align)}
+          className={`inline-flex items-center gap-1 group cursor-pointer font-mono hover:text-slate-200 transition-colors focus:outline-none ${
+            align === 'left' ? 'justify-start' : align === 'center' ? 'justify-center mx-auto' : 'justify-end ml-auto'
+          } ${isActive ? 'text-cyan-400 font-semibold' : ''}`}
+          title={`Lọc & Sắp xếp: ${title}`}
+        >
+          <span>{title}</span>
+          {isSorted ? (
+            colFilters.sortDirection === 'asc' ? (
+              <ArrowUp className="w-3 h-3 text-cyan-400 shrink-0" />
+            ) : (
+              <ArrowDown className="w-3 h-3 text-cyan-400 shrink-0" />
+            )
+          ) : isFiltered ? (
+            <Filter className="w-3 h-3 text-cyan-400 shrink-0" />
+          ) : (
+            <ArrowUpDown className="w-2.5 h-2.5 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+          )}
+        </button>
+      </TableHead>
+    );
+  };
 
   const serverSelectOptions = servers
     .filter((server: any) => !server.name.includes('+'))
@@ -1009,9 +1764,23 @@ export default function PayrollPage() {
               </Button>
             ) : (
               <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <CardTitle className="text-lg text-slate-200 flex items-center gap-2">
+                <CardTitle className="text-lg text-slate-200 flex items-center gap-2 flex-wrap">
                   <Sparkles className="w-5 h-5 text-cyan-400" />
-                  Danh Sách Lương Nhân Sự
+                  <span>Danh Sách Lương Nhân Sự</span>
+                  {isAnyFilterOrSortActive && (
+                    <div className="inline-flex items-center gap-2 ml-1 text-xs font-normal text-slate-400 bg-slate-800/80 border border-slate-700/80 px-2.5 py-0.5 rounded-full">
+                      <span>Hiển thị <strong className="text-cyan-400">{displayedPayrollData.length}</strong>/{payrollData.length}</span>
+                      <button
+                        type="button"
+                        onClick={handleResetAllFilters}
+                        className="inline-flex items-center gap-1 text-[11px] text-slate-300 hover:text-cyan-400 cursor-pointer ml-1"
+                        title="Xóa tất cả bộ lọc & sắp xếp"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Đặt lại</span>
+                      </button>
+                    </div>
+                  )}
                 </CardTitle>
                 <Button
                   variant="ghost"
@@ -1035,21 +1804,21 @@ export default function PayrollPage() {
                   <Table>
                     <TableHeader className="border-slate-850 bg-slate-900/60">
                       <TableRow className="border-slate-850 hover:bg-transparent">
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase">NHÂN VIÊN</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-center">SỐ CA LÀM</TableHead>
-                        <BaseSalaryHead />
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP ĐÊM</TableHead>
-                         <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHỤ CẤP CUỐI TUẦN</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">QUỸ THƯỞNG(%)</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">CHUYÊN CẦN (%)</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">THƯỞNG</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">PHẠT</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right font-bold text-cyan-400">THỰC NHẬN</TableHead>
-                        <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
+                        {renderHeaderWithFilter('staff', 'NHÂN VIÊN', 'left')}
+                        {renderHeaderWithFilter('shifts', 'SỐ CA LÀM', 'center')}
+                        {renderHeaderWithFilter('baseSalary', 'LƯƠNG CƠ BẢN', 'right')}
+                        {renderHeaderWithFilter('nightBonus', 'PHỤ CẤP ĐÊM', 'right')}
+                        {renderHeaderWithFilter('weekendBonus', 'PHỤ CẤP CUỐI TUẦN', 'right')}
+                        {renderHeaderWithFilter('fundPercent', 'QUỸ THƯỞNG(%)', 'right')}
+                        {renderHeaderWithFilter('adjPercent', 'CHUYÊN CẦN (%)', 'right')}
+                        {renderHeaderWithFilter('reward', 'THƯỞNG', 'right')}
+                        {renderHeaderWithFilter('penalty', 'PHẠT', 'right')}
+                        {renderHeaderWithFilter('totalSalary', 'THỰC NHẬN', 'right', 'font-bold text-cyan-400')}
+                        <TableHead className="text-slate-400 font-mono text-[11px] uppercase text-right py-2 px-1.5">HÀNH ĐỘNG</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {payrollData.map((staff) => (
+                      {displayedPayrollData.map((staff) => (
                         <TableRow
                           key={staff.userId}
                           className="border-slate-850 hover:bg-slate-900/20 transition-colors"
@@ -1067,7 +1836,35 @@ export default function PayrollPage() {
                           <TableCell className="text-center font-mono">
                             <span className="text-emerald-400 font-bold">{staff.completedShifts}</span> / {staff.totalShifts}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalBaseSalary)}</TableCell>
+                          <TableCell className="text-right font-mono text-slate-200">
+                            <div className="font-semibold">{formatVND(staff.totalBaseSalary)}</div>
+                            <button
+                              type="button"
+                              disabled={isLocked}
+                              onClick={() => openCustomSalaryDialog(staff)}
+                              className="group inline-flex items-center gap-1 mt-0.5 focus:outline-none disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                              {staff.isCustomRate ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-cyan-400 border-cyan-500/30 bg-cyan-500/10 group-hover:bg-cyan-500/20 cursor-pointer flex items-center gap-1 font-mono text-[10px] py-0 px-1.5 transition-colors"
+                                  title="Đơn giá riêng. Nhấp để thay đổi"
+                                >
+                                  <span>{formatVND(staff.customBaseSalary || staff.effectiveBaseRate || 0)}/ca</span>
+                                  <Pencil className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="text-slate-400 border-slate-700/70 bg-slate-800/40 group-hover:bg-slate-700/60 group-hover:text-slate-200 cursor-pointer flex items-center gap-1 font-mono text-[10px] py-0 px-1.5 transition-colors"
+                                  title="Đang dùng đơn giá mặc định. Nhấp để đổi đơn giá"
+                                >
+                                  <span>{formatVND(staff.effectiveBaseRate || systemSettings.defaultServerSalary || 100000)}/ca</span>
+                                  <Pencil className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </Badge>
+                              )}
+                            </button>
+                          </TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalNightBonus)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">{formatVND(staff.totalWeekendBonus)}</TableCell>
                           <TableCell className="text-right font-mono text-slate-200">
@@ -1150,10 +1947,24 @@ export default function PayrollPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {payrollData.length === 0 && (
+                      {displayedPayrollData.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center text-slate-500 py-16">
-                            Không có dữ liệu ca làm việc hoàn thành trong khoảng thời gian đã chọn.
+                          <TableCell colSpan={11} className="text-center py-10 text-slate-400">
+                            {payrollData.length === 0 ? (
+                              'Không có dữ liệu ca làm việc hoàn thành trong khoảng thời gian đã chọn.'
+                            ) : (
+                              <div className="flex flex-col items-center justify-center gap-2">
+                                <span>Không tìm thấy nhân viên nào khớp với bộ lọc.</span>
+                                <button
+                                  type="button"
+                                  onClick={handleResetAllFilters}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-md bg-slate-800 hover:bg-slate-750 text-cyan-400 border border-slate-700 transition-colors"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  <span>Xóa tất cả bộ lọc</span>
+                                </button>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       )}
@@ -1354,7 +2165,7 @@ export default function PayrollPage() {
                           <TableHead className="text-slate-400 font-mono text-xs uppercase">CA LÀM VIỆC</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase">GHI CHÚ</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">LƯƠNG CƠ BẢN / CA</TableHead>
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-[11px] uppercase text-right py-2 px-1.5">HÀNH ĐỘNG</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1466,7 +2277,7 @@ export default function PayrollPage() {
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐÊM (00H-02H59)</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">ĐÊM (03H-06H59)</TableHead>
                           <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">CUỐI TUẦN (T7/CN)</TableHead>
-                          <TableHead className="text-slate-400 font-mono text-xs uppercase text-right">HÀNH ĐỘNG</TableHead>
+                          <TableHead className="text-slate-400 font-mono text-[11px] uppercase text-right py-2 px-1.5">HÀNH ĐỘNG</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1575,6 +2386,136 @@ export default function PayrollPage() {
         )}
 
       </div>
+
+      {/* Custom Base Salary Dialog */}
+      <Dialog open={isSalaryDialogOpen} onOpenChange={(open) => {
+        if (!isSavingCustomSalary) {
+          setIsSalaryDialogOpen(open);
+          if (!open) setSalaryStaff(null);
+        }
+      }}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-slate-50 max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-slate-100 flex items-center gap-2">
+              <Coins className="w-4 h-4 text-cyan-400" />
+              Đơn giá lương cơ bản - {salaryStaff?.fullName}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-xs mt-1">
+              Áp dụng cho mỗi ca hoàn thành tính từ tuần <span className="text-slate-200 font-medium">{formatDateVi(startDate)}</span> trở đi.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 my-4">
+            {/* Option 1: Default */}
+            <label
+              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                !useCustomSalary
+                  ? 'bg-slate-850/80 border-cyan-500/50'
+                  : 'bg-slate-950/30 border-slate-800 hover:bg-slate-850/40'
+              }`}
+            >
+              <input
+                type="radio"
+                name="salaryOption"
+                checked={!useCustomSalary}
+                onChange={() => setUseCustomSalary(false)}
+                className="mt-0.5 text-cyan-500 focus:ring-0 cursor-pointer"
+              />
+              <div>
+                <div className="text-sm font-medium text-slate-200">Đơn giá mặc định theo cấu hình</div>
+                <div className="text-xs text-slate-400 font-mono mt-0.5">
+                  {formatVND(systemSettings.defaultServerSalary || 100000)} / ca
+                </div>
+              </div>
+            </label>
+
+            {/* Option 2: Custom */}
+            <div
+              className={`p-3 rounded-lg border transition-colors ${
+                useCustomSalary
+                  ? 'bg-slate-850/80 border-cyan-500/50'
+                  : 'bg-slate-950/30 border-slate-800 hover:bg-slate-850/40'
+              }`}
+            >
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="salaryOption"
+                  checked={useCustomSalary}
+                  onChange={() => setUseCustomSalary(true)}
+                  className="mt-0.5 text-cyan-500 focus:ring-0 cursor-pointer"
+                />
+                <div className="text-sm font-medium text-slate-200">
+                  Đơn giá riêng cho nhân viên này
+                </div>
+              </label>
+
+              {useCustomSalary && (
+                <div className="pl-6 mt-3 space-y-2">
+                  <label className="text-xs text-slate-400 block">
+                    Đơn giá mỗi ca làm (VNĐ):
+                  </label>
+                  <div className="relative max-w-xs">
+                    <Input
+                      type="text"
+                      value={customSalaryInput}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, '');
+                        setCustomSalaryInput(formatNumberWithCommas(raw));
+                      }}
+                      placeholder="100,000"
+                      className="bg-slate-950 border-slate-700 font-mono text-slate-100 text-sm pr-12 focus-visible:ring-cyan-500/20"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
+                      đ/ca
+                    </span>
+                  </div>
+
+                  {salaryStaff && (
+                    <div className="text-xs text-slate-400 font-mono pt-1">
+                      Ước tính: {salaryStaff.completedShifts} ca x {formatVND(parseFloat(customSalaryInput.replace(/,/g, '')) || 0)} = <span className="text-emerald-400 font-semibold">{formatVND(salaryStaff.completedShifts * (parseFloat(customSalaryInput.replace(/,/g, '')) || 0))}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-2.5 bg-slate-950/30 border border-slate-800/80 rounded text-[11px] text-slate-400 leading-relaxed">
+              Lưu ý: Mức giá này sẽ được lưu cố định cho <span className="text-slate-200">{salaryStaff?.fullName}</span> từ tuần này trở đi cho đến khi được thay đổi lại.
+            </div>
+          </div>
+
+          <DialogFooter className="flex justify-end gap-2 mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsSalaryDialogOpen(false);
+                setSalaryStaff(null);
+              }}
+              disabled={isSavingCustomSalary}
+              className="border-slate-800 bg-slate-800/60 text-slate-300 hover:bg-slate-800 text-xs"
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveCustomSalary}
+              disabled={isSavingCustomSalary}
+              className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold text-xs flex items-center gap-1.5"
+            >
+              {isSavingCustomSalary ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Đang lưu...</span>
+                </>
+              ) : (
+                'Lưu áp dụng'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Adjustment Dialog */}
       <Dialog open={isAdjustmentDialogOpen} onOpenChange={(open) => setIsAdjustmentDialogOpen(open)}>
@@ -2162,6 +3103,94 @@ export default function PayrollPage() {
         title="Lịch Sử Bảng Lương & Thù Lao"
         defaultTab={activeTab === 'settings' ? 'CONFIG' : 'PAYROLL'}
       />
+      {/* Popover Filter & Sort Portal */}
+      {activePopover && isMounted && createPortal(
+        <div
+          id="table-filter-popover"
+          style={{
+            position: 'absolute',
+            top: `${activePopover.top}px`,
+            left: activePopover.left !== undefined ? `${activePopover.left}px` : undefined,
+            right: activePopover.right !== undefined ? `${activePopover.right}px` : undefined,
+          }}
+          className="z-50 w-64 bg-slate-900 border border-slate-700/80 rounded-lg shadow-xl shadow-black/60 p-3 text-xs text-slate-200 font-sans animate-in fade-in zoom-in-95 duration-100"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+            <span className="font-semibold text-slate-100 flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-cyan-400" />
+              {getPopoverTitle(activePopover.colKey)}
+            </span>
+            {(colFilters.sortKey === activePopover.colKey || checkIsFiltered(activePopover.colKey)) && (
+              <button
+                type="button"
+                onClick={() => handleResetCol(activePopover.colKey)}
+                className="text-[11px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+              >
+                Đặt lại
+              </button>
+            )}
+          </div>
+
+          {/* Sắp xếp */}
+          <div className="space-y-1 mb-2.5">
+            <div className="text-[10px] font-mono uppercase text-slate-500 mb-1">Sắp xếp</div>
+            <button
+              type="button"
+              onClick={() => handleSetSort(activePopover.colKey, 'asc')}
+              className={`w-full flex items-center justify-between px-2 py-1.5 rounded transition-colors text-left cursor-pointer ${
+                colFilters.sortKey === activePopover.colKey && colFilters.sortDirection === 'asc'
+                  ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30'
+                  : 'hover:bg-slate-800 text-slate-300'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <ArrowUp className="w-3.5 h-3.5" />
+                {getSortLabel(activePopover.colKey, 'asc')}
+              </span>
+              {colFilters.sortKey === activePopover.colKey && colFilters.sortDirection === 'asc' && (
+                <Check className="w-3.5 h-3.5 text-cyan-400" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSetSort(activePopover.colKey, 'desc')}
+              className={`w-full flex items-center justify-between px-2 py-1.5 rounded transition-colors text-left cursor-pointer ${
+                colFilters.sortKey === activePopover.colKey && colFilters.sortDirection === 'desc'
+                  ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30'
+                  : 'hover:bg-slate-800 text-slate-300'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <ArrowDown className="w-3.5 h-3.5" />
+                {getSortLabel(activePopover.colKey, 'desc')}
+              </span>
+              {colFilters.sortKey === activePopover.colKey && colFilters.sortDirection === 'desc' && (
+                <Check className="w-3.5 h-3.5 text-cyan-400" />
+              )}
+            </button>
+          </div>
+
+          {/* Bộ lọc */}
+          <div className="pt-2 border-t border-slate-800 space-y-2">
+            <div className="text-[10px] font-mono uppercase text-slate-500">Lọc dữ liệu</div>
+            {renderFilterBody(activePopover.colKey)}
+          </div>
+
+          {/* Đóng */}
+          <div className="pt-2 mt-2 border-t border-slate-800/80 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setActivePopover(null)}
+              className="px-2.5 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-750 text-slate-300 transition-colors cursor-pointer"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   );

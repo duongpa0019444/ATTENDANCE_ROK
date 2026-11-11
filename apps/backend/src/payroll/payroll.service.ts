@@ -209,6 +209,13 @@ export class PayrollService {
       orderBy: { start_date: 'desc' },
     });
 
+    const userSalaryHistories = await this.prisma.userSalaryHistory.findMany({
+      where: {
+        start_date: { lte: endDate },
+      },
+      orderBy: { start_date: 'desc' },
+    });
+
     for (const assignment of assignments) {
       if (isRangeFilter) {
         const assignmentTimeStr = `${this.formatDateOnly(assignment.work_date)}T${assignment.shift.start_time || '00:00'}:00`;
@@ -243,6 +250,12 @@ export class PayrollService {
       const isCompleted = true;
 
       if (!userPayrollMap.has(user.id)) {
+        const userSalaryHist = userSalaryHistories.find(
+          (h) => h.user_id === user.id && new Date(h.start_date) <= startDate
+        );
+        const hasCustomRate = userSalaryHist !== undefined && userSalaryHist.custom_base_salary !== null;
+        const customRate = hasCustomRate ? userSalaryHist.custom_base_salary : null;
+
         userPayrollMap.set(user.id, {
           userId: user.id,
           username: user.username,
@@ -259,6 +272,9 @@ export class PayrollService {
           totalSalary: 0,
           fundPercent: 0,
           totalFundShared: 0,
+          customBaseSalary: customRate,
+          isCustomRate: hasCustomRate,
+          effectiveBaseRate: hasCustomRate && customRate !== null ? customRate : defaultSalary,
           details: [],
         });
       }
@@ -296,9 +312,13 @@ export class PayrollService {
         })?.base_salary;
         const serverBase = histBase !== undefined ? histBase : assignment.shift.server?.base_salary;
 
-        baseSalary = shiftBase !== null && shiftBase !== undefined
-          ? shiftBase
-          : (serverBase !== null && serverBase !== undefined && serverBase > 0 ? serverBase : defaultSalary);
+        if (payroll.isCustomRate && payroll.customBaseSalary !== null) {
+          baseSalary = payroll.customBaseSalary;
+        } else {
+          baseSalary = shiftBase !== null && shiftBase !== undefined
+            ? shiftBase
+            : (serverBase !== null && serverBase !== undefined && serverBase > 0 ? serverBase : defaultSalary);
+        }
 
         // 2. Night Shift Bonus
         const startTime = assignment.shift.start_time || '00:00';
@@ -1092,4 +1112,67 @@ export class PayrollService {
 
     return result;
   }
+  async setCustomBaseSalary(body: { userId: string; startDate: string; customBaseSalary: number | null }, actorId?: string) {
+    const start = this.parseDateOnly(body.startDate);
+    if (await this.prisma.isDateLocked(start, '07:00')) {
+      throw new BadRequestException('Tuần này đã chốt bảng lương. Không thể chỉnh sửa đơn giá.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: body.userId },
+      select: { id: true, full_name: true, username: true }
+    });
+    if (!user) throw new BadRequestException('User không tồn tại');
+
+    const rateVal = body.customBaseSalary !== null && body.customBaseSalary !== undefined && (body.customBaseSalary as any) !== ''
+      ? Math.max(0, Number(body.customBaseSalary))
+      : null;
+
+    const existing = await this.prisma.userSalaryHistory.findUnique({
+      where: {
+        user_id_start_date: {
+          user_id: body.userId,
+          start_date: start,
+        }
+      }
+    });
+
+    const result = await this.prisma.userSalaryHistory.upsert({
+      where: {
+        user_id_start_date: {
+          user_id: body.userId,
+          start_date: start,
+        }
+      },
+      update: {
+        custom_base_salary: rateVal,
+      },
+      create: {
+        user_id: body.userId,
+        start_date: start,
+        custom_base_salary: rateVal,
+      }
+    });
+
+    const formatMoney = (val?: number | null) => (val !== undefined && val !== null ? `${Number(val).toLocaleString('vi-VN')}đ/ca` : 'Mặc định theo cấu hình');
+    const startStr = `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}/${start.getFullYear()}`;
+
+    await this.auditLogsService.log({
+      actorId,
+      page: 'PAYROLL',
+      action: existing ? 'UPDATE' : 'CREATE',
+      entityType: 'UserSalaryHistory',
+      entityId: result.id,
+      summary: `Cấu hình đơn giá lương cơ bản cho [${user.full_name}]: "${formatMoney(existing?.custom_base_salary)}" → "${formatMoney(rateVal)}" từ tuần ${startStr}`,
+      metadata: {
+        userId: user.id,
+        userName: user.full_name,
+        startDate: body.startDate,
+        customBaseSalary: rateVal,
+      }
+    });
+
+    return result;
+  }
+
 }

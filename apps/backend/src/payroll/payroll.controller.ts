@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -181,5 +181,20 @@ export class PayrollController {
     }
     return this.payrollService.upsertWeeklyFund(body, req.user?.userId);
   }
-}
+  @Post('custom-base-salary')
+  async setCustomBaseSalary(
+    @Request() req: any,
+    @Body()
+    body: {
+      userId: string;
+      startDate: string;
+      customBaseSalary: number | null;
+    },
+  ) {
+    if (!body.userId || !body.startDate) {
+      throw new BadRequestException('Missing userId or startDate');
+    }
+    return this.payrollService.setCustomBaseSalary(body, req.user?.userId);
+  }
 
+}
