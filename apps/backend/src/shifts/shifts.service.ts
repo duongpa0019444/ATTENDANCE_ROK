@@ -841,25 +841,30 @@ export class ShiftsService {
     }
 
     const txRes = await this.prisma.$transaction(async (tx) => {
-      // ===== STEP 1: Delete ALL existing assignments on the imported dates within the current week's cycle =====
       const uniqueWorkDates = Array.from(new Set(assignments.map(a => a.work_date))).map(d => new Date(d));
 
+      // 1. Fetch all existing assignments on imported dates
       const allDateAssignments = await tx.shiftAssignment.findMany({
         where: {
           work_date: { in: uniqueWorkDates },
         },
         include: {
-          shift: true,
+          shift: {
+            include: { server: true },
+          },
+          attendance_logs: {
+            include: { escalation_logs: true },
+          },
         },
       });
 
-      // Filter to only delete assignments within the current week's cycle bounds
+      // Filter to existing assignments within the current week's cycle bounds
       const nextMondayDate = new Date(weekStartDate);
       nextMondayDate.setDate(nextMondayDate.getDate() + 7);
       const nextMondayStr = nextMondayDate.toISOString().split('T')[0];
       const weekStartDateStr = week_start_date; // e.g. '2026-06-29'
 
-      const assignmentsToDelete = allDateAssignments.filter(a => {
+      const existingWeekAssignments = allDateAssignments.filter(a => {
         const dateStr = a.work_date.toISOString().split('T')[0];
         const startTime = a.shift?.start_time || '00:00';
         const isAfterStart = (dateStr > weekStartDateStr) || (dateStr === weekStartDateStr && startTime >= '07:00');
@@ -867,44 +872,33 @@ export class ShiftsService {
         return isAfterStart && isBeforeEnd;
       });
 
-      const allAssignmentIds = assignmentsToDelete.map(a => a.id);
-      const affectedShiftIds = [...new Set(assignmentsToDelete.map(a => a.shift_id))];
+      // Build lookup maps for existing assignments:
+      // a) By exact (shift_id, work_date, user_id)
+      const existingByShiftDateUser = new Map<string, typeof existingWeekAssignments[0]>();
+      // b) Cache confirmed attendance logs by (user_id, dateStr) so if a shift is rescheduled/renamed,
+      // the user's prior confirmation ('READY') is carried over
+      const priorConfirmedLogsByUserDate = new Map<string, { status: string; confirm_at: Date | null }>();
 
-      if (allAssignmentIds.length > 0) {
-        // Delete escalation logs
-        const allLogs = await tx.attendanceLog.findMany({
-          where: { shift_assignment_id: { in: allAssignmentIds } },
-          select: { id: true },
-        });
-        const allLogIds = allLogs.map(l => l.id);
-        if (allLogIds.length > 0) {
-          await tx.escalationLog.deleteMany({
-            where: { attendance_id: { in: allLogIds } },
+      for (const a of existingWeekAssignments) {
+        const dateStr = a.work_date.toISOString().split('T')[0];
+        const key = `${a.shift_id}_${dateStr}_${a.user_id}`;
+        existingByShiftDateUser.set(key, a);
+
+        const log = a.attendance_logs?.[0];
+        if (log && (log.status === 'READY' || log.confirm_at)) {
+          priorConfirmedLogsByUserDate.set(`${a.user_id}_${dateStr}`, {
+            status: log.status,
+            confirm_at: log.confirm_at,
           });
         }
-        // Delete attendance logs
-        await tx.attendanceLog.deleteMany({
-          where: { shift_assignment_id: { in: allAssignmentIds } },
-        });
-        // Delete all assignments
-        await tx.shiftAssignment.deleteMany({
-          where: { id: { in: allAssignmentIds } },
-        });
       }
 
-      // Delete shifts that are now orphaned (no assignments left)
-      for (const shiftId of affectedShiftIds) {
-        const remainingAssignments = await tx.shiftAssignment.count({
-          where: { shift_id: shiftId },
-        });
-        if (remainingAssignments === 0) {
-          await tx.shift.delete({ where: { id: shiftId } });
-        }
-      }
-
-      // ===== STEP 2: Create new shifts and assignments from Excel =====
+      const retainedAssignmentIds = new Set<string>();
+      const activeShiftIds = new Set<string>();
       const results = [];
+      const todayStr = new Date().toISOString().split('T')[0];
 
+      // 2. Process assignments from Excel
       for (const item of assignments) {
         // Tách các server nếu có dấu cộng (ví dụ "2914+2658" thành ["2914", "2658"])
         const individualNames = item.server_name
@@ -961,7 +955,7 @@ export class ShiftsService {
               week_start_date: weekStartDate,
             },
           });
-        } else {
+        } else if (item.shift_name && shift.name !== item.shift_name) {
           shift = await tx.shift.update({
             where: { id: shift.id },
             data: {
@@ -970,28 +964,40 @@ export class ShiftsService {
           });
         }
 
+        activeShiftIds.add(shift.id);
+
         const workDate = new Date(item.work_date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const isPastDate = workDate < today;
+        const dateStr = item.work_date.split('T')[0];
+        const isPastDate = dateStr < todayStr;
 
         // Deduplicate user_ids to avoid unique constraint violation
         const uniqueUserIds = [...new Set(item.user_ids)];
 
         for (const userId of uniqueUserIds) {
-          // Check if assignment already exists (could happen if Excel has duplicate rows for same shift)
-          const existing = await tx.shiftAssignment.findFirst({
-            where: {
-              shift_id: shift.id,
-              work_date: workDate,
-              user_id: userId,
-            },
-          });
+          const key = `${shift.id}_${dateStr}_${userId}`;
+          const existing = existingByShiftDateUser.get(key);
+
           if (existing) {
+            // Assignment already exists in DB: RETAIN IT without touching its attendance_logs!
+            retainedAssignmentIds.add(existing.id);
+
+            // Ensure an attendance log exists (in case it was missing for any reason)
+            if (!existing.attendance_logs || existing.attendance_logs.length === 0) {
+              await tx.attendanceLog.create({
+                data: {
+                  user_id: userId,
+                  shift_assignment_id: existing.id,
+                  status: isPastDate ? 'READY' : 'PENDING',
+                  confirm_at: isPastDate ? new Date() : null,
+                },
+              });
+            }
+
             results.push(existing);
             continue;
           }
 
+          // New assignment for this shift & date
           const assignment = await tx.shiftAssignment.create({
             data: {
               user_id: userId,
@@ -1000,17 +1006,72 @@ export class ShiftsService {
               status: 'SCHEDULED',
             },
           });
+          retainedAssignmentIds.add(assignment.id);
+
+          // Check if employee already confirmed a ca on this date (carry over their READY confirmation)
+          const priorConfirmed = priorConfirmedLogsByUserDate.get(`${userId}_${dateStr}`);
+          let initialStatus = 'PENDING';
+          let initialConfirmAt: Date | null = null;
+
+          if (isPastDate) {
+            initialStatus = 'READY';
+            initialConfirmAt = new Date();
+          } else if (priorConfirmed && priorConfirmed.status === 'READY') {
+            initialStatus = 'READY';
+            initialConfirmAt = priorConfirmed.confirm_at || new Date();
+          }
 
           await tx.attendanceLog.create({
             data: {
               user_id: userId,
               shift_assignment_id: assignment.id,
-              status: isPastDate ? 'READY' : 'PENDING',
-              confirm_at: isPastDate ? new Date() : null,
+              status: initialStatus,
+              confirm_at: initialConfirmAt,
             },
           });
 
           results.push(assignment);
+        }
+      }
+
+      // 3. Remove only assignments that were in the week cycle but NO LONGER in the new Excel
+      const assignmentsToDelete = existingWeekAssignments.filter(a => !retainedAssignmentIds.has(a.id));
+      const deleteIds = assignmentsToDelete.map(a => a.id);
+
+      if (deleteIds.length > 0) {
+        // Delete escalation logs for removed assignments
+        const logsToDelete = await tx.attendanceLog.findMany({
+          where: { shift_assignment_id: { in: deleteIds } },
+          select: { id: true },
+        });
+        const logIdsToDelete = logsToDelete.map(l => l.id);
+        if (logIdsToDelete.length > 0) {
+          await tx.escalationLog.deleteMany({
+            where: { attendance_id: { in: logIdsToDelete } },
+          });
+        }
+
+        // Delete attendance logs for removed assignments
+        await tx.attendanceLog.deleteMany({
+          where: { shift_assignment_id: { in: deleteIds } },
+        });
+
+        // Delete removed assignments
+        await tx.shiftAssignment.deleteMany({
+          where: { id: { in: deleteIds } },
+        });
+      }
+
+      // 4. Delete orphaned shifts that now have 0 assignments
+      const affectedShiftIds = [...new Set(assignmentsToDelete.map(a => a.shift_id))];
+      for (const shiftId of affectedShiftIds) {
+        if (!activeShiftIds.has(shiftId)) {
+          const remaining = await tx.shiftAssignment.count({
+            where: { shift_id: shiftId },
+          });
+          if (remaining === 0) {
+            await tx.shift.delete({ where: { id: shiftId } }).catch(() => {});
+          }
         }
       }
 
@@ -1036,3 +1097,4 @@ export class ShiftsService {
     return txRes;
   }
 }
+
