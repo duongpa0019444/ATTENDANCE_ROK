@@ -121,8 +121,8 @@ export class SchedulerService {
         }
       }
 
-      // 2. T -warning (Escalation L1 to admin if employee did not confirm)
-      if (diffMins <= totalWarningMins && diffMins >= -180) {
+      // 2. T -warning (Escalation L1 to admin if employee did not confirm before shift start)
+      if (diffMins <= totalWarningMins && diffMins >= 0) {
         if (log.status === 'PENDING') {
           // Escalation Level 1
           const existingEsc = await this.prisma.escalationLog.findFirst({

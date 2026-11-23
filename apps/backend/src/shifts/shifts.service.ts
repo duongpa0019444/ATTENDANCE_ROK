@@ -843,10 +843,18 @@ export class ShiftsService {
     const txRes = await this.prisma.$transaction(async (tx) => {
       const uniqueWorkDates = Array.from(new Set(assignments.map(a => a.work_date))).map(d => new Date(d));
 
-      // 1. Fetch all existing assignments on imported dates
+      // 1. Fetch all existing assignments on imported dates and within the week cycle
+      const nextMondayDate = new Date(weekStartDate);
+      nextMondayDate.setDate(nextMondayDate.getDate() + 7);
+      const nextMondayStr = nextMondayDate.toISOString().split('T')[0];
+      const weekStartDateStr = week_start_date; // e.g. '2026-06-29'
+
       const allDateAssignments = await tx.shiftAssignment.findMany({
         where: {
-          work_date: { in: uniqueWorkDates },
+          OR: [
+            { work_date: { in: uniqueWorkDates } },
+            { work_date: { gte: weekStartDate, lte: nextMondayDate } },
+          ],
         },
         include: {
           shift: {
@@ -859,11 +867,6 @@ export class ShiftsService {
       });
 
       // Filter to existing assignments within the current week's cycle bounds
-      const nextMondayDate = new Date(weekStartDate);
-      nextMondayDate.setDate(nextMondayDate.getDate() + 7);
-      const nextMondayStr = nextMondayDate.toISOString().split('T')[0];
-      const weekStartDateStr = week_start_date; // e.g. '2026-06-29'
-
       const existingWeekAssignments = allDateAssignments.filter(a => {
         const dateStr = a.work_date.toISOString().split('T')[0];
         const startTime = a.shift?.start_time || '00:00';
@@ -875,18 +878,26 @@ export class ShiftsService {
       // Build lookup maps for existing assignments:
       // a) By exact (shift_id, work_date, user_id)
       const existingByShiftDateUser = new Map<string, typeof existingWeekAssignments[0]>();
-      // b) Cache confirmed attendance logs by (user_id, dateStr) so if a shift is rescheduled/renamed,
-      // the user's prior confirmation ('READY') is carried over
-      const priorConfirmedLogsByUserDate = new Map<string, { status: string; confirm_at: Date | null }>();
+      // b) Fallback lookup by (user_id, dateStr, startTime) for when shift.id differs (e.g. server renamed/reordered)
+      const existingByUserDateStartTime = new Map<string, typeof existingWeekAssignments[0]>();
+      // c) Cache confirmed attendance logs by (user_id, dateStr, startTime) so if a shift is rescheduled/renamed,
+      // the user's prior confirmation ('READY') is carried over without colliding on multiple shifts/day
+      const priorConfirmedLogsByUserDateTime = new Map<string, { status: string; confirm_at: Date | null }>();
 
       for (const a of existingWeekAssignments) {
         const dateStr = a.work_date.toISOString().split('T')[0];
-        const key = `${a.shift_id}_${dateStr}_${a.user_id}`;
-        existingByShiftDateUser.set(key, a);
+        const startTime = a.shift?.start_time || '00:00';
+        const keyExact = `${a.shift_id}_${dateStr}_${a.user_id}`;
+        existingByShiftDateUser.set(keyExact, a);
+
+        const keyFallback = `${a.user_id}_${dateStr}_${startTime}`;
+        if (!existingByUserDateStartTime.has(keyFallback)) {
+          existingByUserDateStartTime.set(keyFallback, a);
+        }
 
         const log = a.attendance_logs?.[0];
         if (log && (log.status === 'READY' || log.confirm_at)) {
-          priorConfirmedLogsByUserDate.set(`${a.user_id}_${dateStr}`, {
+          priorConfirmedLogsByUserDateTime.set(keyFallback, {
             status: log.status,
             confirm_at: log.confirm_at,
           });
@@ -974,8 +985,29 @@ export class ShiftsService {
         const uniqueUserIds = [...new Set(item.user_ids)];
 
         for (const userId of uniqueUserIds) {
-          const key = `${shift.id}_${dateStr}_${userId}`;
-          const existing = existingByShiftDateUser.get(key);
+          const keyExact = `${shift.id}_${dateStr}_${userId}`;
+          const keyFallback = `${userId}_${dateStr}_${item.start_time}`;
+
+          // Tier 1: Exact match by (shift_id, work_date, user_id)
+          let existing = existingByShiftDateUser.get(keyExact);
+
+          // Tier 2: Fallback match by (user_id, work_date, start_time)
+          // If shift_id differs due to composite server renaming/reordering or shift formatting,
+          // match by user + date + start_time so existing confirmations & attendance logs are NEVER lost.
+          if (!existing) {
+            const fallbackCandidate = existingByUserDateStartTime.get(keyFallback);
+            if (fallbackCandidate && !retainedAssignmentIds.has(fallbackCandidate.id)) {
+              existing = fallbackCandidate;
+              // If shift_id changed (e.g. server was renamed or composite server restructured), update assignment's shift_id
+              if (existing.shift_id !== shift.id) {
+                await tx.shiftAssignment.update({
+                  where: { id: existing.id },
+                  data: { shift_id: shift.id },
+                });
+                existing.shift_id = shift.id;
+              }
+            }
+          }
 
           if (existing) {
             // Assignment already exists in DB: RETAIN IT without touching its attendance_logs!
@@ -983,12 +1015,13 @@ export class ShiftsService {
 
             // Ensure an attendance log exists (in case it was missing for any reason)
             if (!existing.attendance_logs || existing.attendance_logs.length === 0) {
+              const prior = priorConfirmedLogsByUserDateTime.get(keyFallback);
               await tx.attendanceLog.create({
                 data: {
                   user_id: userId,
                   shift_assignment_id: existing.id,
-                  status: isPastDate ? 'READY' : 'PENDING',
-                  confirm_at: isPastDate ? new Date() : null,
+                  status: (prior?.status === 'READY' || isPastDate) ? 'READY' : 'PENDING',
+                  confirm_at: prior?.confirm_at || (isPastDate ? new Date() : null),
                 },
               });
             }
@@ -1008,8 +1041,8 @@ export class ShiftsService {
           });
           retainedAssignmentIds.add(assignment.id);
 
-          // Check if employee already confirmed a ca on this date (carry over their READY confirmation)
-          const priorConfirmed = priorConfirmedLogsByUserDate.get(`${userId}_${dateStr}`);
+          // Check if employee already confirmed this ca (carry over their READY confirmation)
+          const priorConfirmed = priorConfirmedLogsByUserDateTime.get(keyFallback);
           let initialStatus = 'PENDING';
           let initialConfirmAt: Date | null = null;
 
