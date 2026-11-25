@@ -255,14 +255,18 @@ export class WeekCycleService {
     const startStr = this.formatDateOnly(period.start_date);
     const endStr = this.formatDateOnly(period.end_date);
 
-    // Check if any Shift was created for this week_start_date or any ShiftAssignment falls inside [start, end)
-    const shiftCount = await this.prisma.shift.count({
-      where: { week_start_date: period.start_date },
+    // Check if any ShiftAssignment falls inside [start_date + start_time, end_date + end_time]
+    // or any Shift belonging to this week_start_date actually has assignments
+    const shiftWithAssignCount = await this.prisma.shift.count({
+      where: {
+        week_start_date: period.start_date,
+        assignments: { some: {} },
+      },
     });
-    if (shiftCount > 0) {
+    if (shiftWithAssignCount > 0) {
       return {
         canDelete: false,
-        reason: `Đã có ${shiftCount} ca làm việc thuộc chu kỳ này. Chỉ được xóa khi chưa có ca làm việc / phân công nào phát sinh.`,
+        reason: `Đã có ${shiftWithAssignCount} ca làm việc có nhân sự thuộc chu kỳ này. Chỉ được xóa khi chưa có phân công nhân sự nào phát sinh.`,
       };
     }
 
@@ -305,19 +309,32 @@ export class WeekCycleService {
       };
     }
 
-    const [shiftCount, assignmentCount] = await Promise.all([
+    const effStr = this.formatDateOnly(rule.effective_date);
+    const ruleStartTime = rule.start_time || '07:00';
+
+    const [shiftWithAssignCount, assignments] = await Promise.all([
       this.prisma.shift.count({
-        where: { week_start_date: { gte: rule.effective_date } },
+        where: {
+          week_start_date: { gte: rule.effective_date },
+          assignments: { some: {} },
+        },
       }),
-      this.prisma.shiftAssignment.count({
+      this.prisma.shiftAssignment.findMany({
         where: { work_date: { gte: rule.effective_date } },
+        include: { shift: { select: { start_time: true } } },
       }),
     ]);
 
-    if (shiftCount > 0 || assignmentCount > 0) {
+    const hasAssignmentFromRuleStart = assignments.some((a) => {
+      const dStr = this.formatDateOnly(a.work_date);
+      const st = a.shift?.start_time || '00:00';
+      return dStr > effStr || (dStr === effStr && st >= ruleStartTime);
+    });
+
+    if (shiftWithAssignCount > 0 || hasAssignmentFromRuleStart) {
       return {
         canDelete: false,
-        reason: 'Đã có ca làm việc / phân công nhân sự phát sinh từ ngày hiệu lực của quy tắc này. Chỉ được xóa khi chưa có dữ liệu ca trực.',
+        reason: 'Đã có ca làm việc / phân công nhân sự phát sinh từ thời điểm hiệu lực của quy tắc này. Chỉ được xóa khi chưa có dữ liệu ca trực.',
       };
     }
 
