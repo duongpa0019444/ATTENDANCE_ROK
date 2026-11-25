@@ -22,6 +22,7 @@ import DatePicker, { registerLocale } from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { vi } from 'date-fns/locale';
 import Select from 'react-select';
+import { fetchWeekBoundary, fetchAdjacentWeekBoundary } from '@/lib/week-cycle';
 
 registerLocale('vi', vi);
 
@@ -176,7 +177,29 @@ export default function PayrollPage() {
     return format(nextMon, 'yyyy-MM-dd');
   });
 
-  const handleWeekChange = (offset: number) => {
+  useEffect(() => {
+    const syncCurrentWeek = async () => {
+      const boundary = await fetchWeekBoundary();
+      if (boundary) {
+        setStartDate(boundary.start_date);
+        setEndDate(boundary.end_date);
+      }
+    };
+    syncCurrentWeek();
+    const handleCycleUpdated = () => {
+      syncCurrentWeek();
+    };
+    window.addEventListener('week-cycle-updated', handleCycleUpdated);
+    return () => window.removeEventListener('week-cycle-updated', handleCycleUpdated);
+  }, []);
+
+  const handleWeekChange = async (offset: number) => {
+    const boundary = await fetchAdjacentWeekBoundary({ start_date: startDate, end_date: endDate }, offset < 0 ? -1 : 1);
+    if (boundary) {
+      setStartDate(boundary.start_date);
+      setEndDate(boundary.end_date);
+      return;
+    }
     const currentMon = parseISO(startDate);
     const newMon = new Date(currentMon);
     newMon.setDate(currentMon.getDate() + offset * 7);
@@ -185,7 +208,13 @@ export default function PayrollPage() {
     setEndDate(format(newNextMon, 'yyyy-MM-dd'));
   };
 
-  const handleSelectWeekByDate = (date: Date) => {
+  const handleSelectWeekByDate = async (date: Date) => {
+    const boundary = await fetchWeekBoundary(date);
+    if (boundary) {
+      setStartDate(boundary.start_date);
+      setEndDate(boundary.end_date);
+      return;
+    }
     const mon = getMonday(date);
     const nextMon = getNextMonday(mon);
     setStartDate(format(mon, 'yyyy-MM-dd'));
@@ -1547,11 +1576,17 @@ export default function PayrollPage() {
               <div className="flex flex-wrap items-center gap-2 bg-slate-900 border border-slate-800 p-1.5 rounded-xl backdrop-blur-xl relative z-40">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setFilterMode('week');
-                  const mon = getMonday(parseISO(startDate));
-                  setStartDate(format(mon, 'yyyy-MM-dd'));
-                  setEndDate(format(getNextMonday(mon), 'yyyy-MM-dd'));
+                  const boundary = await fetchWeekBoundary(startDate);
+                  if (boundary) {
+                    setStartDate(boundary.start_date);
+                    setEndDate(boundary.end_date);
+                  } else {
+                    const mon = getMonday(parseISO(startDate));
+                    setStartDate(format(mon, 'yyyy-MM-dd'));
+                    setEndDate(format(getNextMonday(mon), 'yyyy-MM-dd'));
+                  }
                 }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                   filterMode === 'week'

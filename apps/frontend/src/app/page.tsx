@@ -135,6 +135,7 @@ export default function AdminDashboard() {
     };
 
     fetchSettings();
+    window.addEventListener('operations-settings-updated', fetchSettings);
 
     // Socket setup
     socket.connect();

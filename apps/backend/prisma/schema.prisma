@@ -267,3 +267,30 @@ model WeeklyFund {
 
   @@map("weekly_funds")
 }
+
+model WeekCycleRule {
+  id                String   @id @default(uuid())
+  start_day_of_week Int      // 0: Chủ Nhật, 1: Thứ 2, ..., 5: Thứ 6, 6: Thứ 7
+  start_time        String   @default("07:00")
+  end_time          String   @default("06:59")
+  effective_date    DateTime @db.Date
+  created_at        DateTime @default(now())
+
+  @@unique([effective_date])
+  @@map("week_cycle_rules")
+}
+
+model CustomWeekPeriod {
+  id         String   @id @default(uuid())
+  name       String?
+  start_date DateTime @db.Date
+  start_time String   @default("07:00")
+  end_date   DateTime @db.Date
+  end_time   String   @default("06:59")
+  total_days Float
+  created_at DateTime @default(now())
+
+  @@unique([start_date, end_date])
+  @@map("custom_week_periods")
+}
+

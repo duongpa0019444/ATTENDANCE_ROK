@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { apiFetch } from '@/lib/api';
+import { fetchWeekBoundary, getDayShortName, WeekBoundary } from '@/lib/week-cycle';
 import {
   format,
   startOfMonth,
@@ -177,6 +178,24 @@ export default function StaffPage() {
   const [selectedUserFilter, setSelectedUserFilter] = useState<string>('all');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [matrixDate, setMatrixDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [weekBoundary, setWeekBoundary] = useState<WeekBoundary | null>(null);
+
+  const syncMatrixBoundary = useCallback(async (targetDate?: Date | string) => {
+    const boundary = await fetchWeekBoundary(targetDate);
+    if (boundary) {
+      setWeekBoundary(boundary);
+      setMatrixDate(parseISO(boundary.start_date));
+    }
+  }, []);
+
+  useEffect(() => {
+    syncMatrixBoundary();
+    const handleCycleUpdated = () => {
+      syncMatrixBoundary();
+    };
+    window.addEventListener('week-cycle-updated', handleCycleUpdated);
+    return () => window.removeEventListener('week-cycle-updated', handleCycleUpdated);
+  }, [syncMatrixBoundary]);
   const [isMatrixLoading, setIsMatrixLoading] = useState(false);
   const [menuPortalTarget, setMenuPortalTarget] = useState<HTMLElement | null>(null);
 
@@ -291,7 +310,7 @@ export default function StaffPage() {
     setIsMatrixLoading(true);
     try {
       const startStr = format(matrixDate, 'yyyy-MM-dd');
-      const endStr = format(addDays(matrixDate, 7), 'yyyy-MM-dd');
+      const endStr = weekBoundary ? weekBoundary.end_date : format(addDays(matrixDate, 7), 'yyyy-MM-dd');
 
       const [serversRes, shiftsRes, usersRes, assignRes] = await Promise.all([
         apiFetch(`${API_URL}/servers`),
@@ -327,22 +346,27 @@ export default function StaffPage() {
     }
   }, [matrixDate, fetchMatrixData, activeTab]);
 
-  // Compute 8 days: from Monday of selected week to Monday of next week
-  const weekDays = Array.from({ length: 8 }).map((_, i) => addDays(matrixDate, i));
+  // Compute dynamic week days based on configured WeekCycle
+  const totalDaysCount = weekBoundary ? weekBoundary.total_days : 7;
+  const weekEndDate = weekBoundary ? parseISO(weekBoundary.end_date) : addDays(matrixDate, 7);
+  const weekDays = Array.from({ length: totalDaysCount + 1 }).map((_, i) => addDays(matrixDate, i));
 
-  // Helper: check if a shift+date combo belongs to the current week
+  // Helper: check if a shift+date combo belongs to the current dynamic week cycle
   const isShiftInCurrentWeek = useCallback((shift: any, day: Date): boolean => {
-    const weekStartMon = matrixDate;
-    const nextWeekMon = addDays(weekStartMon, 7);
+    const startTimeStr = weekBoundary?.start_time || '07:00';
+    const endTimeStr = weekBoundary?.end_time || '06:59';
+    const [bsh, bsm] = startTimeStr.split(':').map(Number);
+    const [beh, bem] = endTimeStr.split(':').map(Number);
+
     const [sh, sm] = (shift.start_time || '00:00').split(':').map(Number);
     const cellDate = new Date(day);
     cellDate.setHours(sh, sm, 0, 0);
-    const weekStart = new Date(weekStartMon);
-    weekStart.setHours(7, 0, 0, 0);
-    const weekEnd = new Date(nextWeekMon);
-    weekEnd.setHours(7, 0, 0, 0);
-    return cellDate >= weekStart && cellDate < weekEnd;
-  }, [matrixDate]);
+    const weekStart = new Date(matrixDate);
+    weekStart.setHours(bsh, bsm, 0, 0);
+    const weekEnd = new Date(weekEndDate);
+    weekEnd.setHours(beh, bem, 59, 999);
+    return cellDate >= weekStart && cellDate <= weekEnd;
+  }, [matrixDate, weekEndDate, weekBoundary]);
 
   const getDatabaseWorkDate = useCallback((shift: any, day: Date): Date => {
     return day;
@@ -678,12 +702,19 @@ export default function StaffPage() {
                 <DatePicker
                   selected={matrixDate}
                   startDate={matrixDate}
-                  endDate={addDays(matrixDate, 7)}
-                  onChange={(date: Date | null) => {
-                    if (date) setMatrixDate(startOfWeek(date, { weekStartsOn: 1 }));
+                  endDate={weekEndDate}
+                  onChange={async (date: Date | null) => {
+                    if (date) {
+                      const boundary = await fetchWeekBoundary(date);
+                      if (boundary) {
+                        setWeekBoundary(boundary);
+                        setMatrixDate(parseISO(boundary.start_date));
+                      } else {
+                        setMatrixDate(startOfWeek(date, { weekStartsOn: 1 }));
+                      }
+                    }
                   }}
-                  showWeekPicker
-                  value={`Tuần: ${format(matrixDate, 'dd/MM')} - ${format(addDays(matrixDate, 7), 'dd/MM')}`}
+                  value={`Tuần: ${format(matrixDate, 'dd/MM')} - ${format(weekEndDate, 'dd/MM')}`}
                   formatWeekDay={formatWeekDayLabel}
                   portalId="shift-week-datepicker-portal"
                   popperClassName="shift-week-datepicker-popper"
@@ -693,7 +724,7 @@ export default function StaffPage() {
               </div>
 
               <div className="text-xs text-slate-500 font-mono">
-                Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Thứ 2 sau ({format(weekDays[7], 'dd/MM')}) (7h sáng → 6h59 sáng hôm sau)
+                {getDayShortName(weekDays[0])} ({format(weekDays[0], 'dd/MM')}) - {getDayShortName(weekDays[weekDays.length - 1])} ({format(weekDays[weekDays.length - 1], 'dd/MM')}) ({weekBoundary?.start_time || '07:00'} → {weekBoundary?.end_time || '06:59'} • {totalDaysCount} ngày)
               </div>
             </div>
 

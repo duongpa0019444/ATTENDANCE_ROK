@@ -372,6 +372,16 @@ html:not(.dark) {
     background-color: #f1f5f9 !important;
   }
 
+  /* Disabled day in Light Mode */
+  .react-datepicker__day--disabled,
+  .react-datepicker__day--disabled:hover {
+    color: #cbd5e1 !important; /* light gray */
+    background-color: transparent !important;
+    cursor: not-allowed !important;
+    opacity: 0.45 !important;
+    text-decoration: line-through;
+  }
+
   .react-datepicker__day--selected,
   .react-datepicker__day--in-range {
     background-color: #0891b2 !important;
@@ -485,4 +495,23 @@ html:not(.dark) {
   animation: toastSlideOut 0.25s cubic-bezier(0.4, 0, 1, 1) forwards;
   will-change: transform, opacity;
 }
+
+/* Global React Datepicker Disabled Days (Dark & Light) */
+.react-datepicker__day--disabled,
+.react-datepicker__day--disabled:hover {
+  color: #64748b !important; /* Muted gray */
+  background-color: transparent !important;
+  cursor: not-allowed !important;
+  opacity: 0.35 !important;
+  pointer-events: auto !important;
+  text-decoration: line-through !important;
+}
+
+.dark .react-datepicker__day--disabled,
+.dark .react-datepicker__day--disabled:hover {
+  color: #475569 !important; /* Slate-600 dark muted gray */
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  opacity: 0.3 !important;
+}
+
 

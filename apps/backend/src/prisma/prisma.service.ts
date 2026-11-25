@@ -92,8 +92,31 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
         const startStr = this.formatDateOnly(locked.start_date);
         const endStr = this.formatDateOnly(locked.end_date);
 
-        const startBoundary = `${startStr}T07:00:00`;
-        const endBoundary = `${endStr}T06:59:59`;
+        // Resolve dynamic start_time / end_time if configured in CustomWeekPeriod or WeekCycleRule
+        let startBoundTime = '07:00';
+        let endBoundTime = '06:59';
+        const custom = await this.customWeekPeriod.findFirst({
+          where: {
+            start_date: { lte: locked.start_date },
+            end_date: { gte: locked.start_date },
+          },
+        });
+        if (custom) {
+          startBoundTime = custom.start_time || '07:00';
+          endBoundTime = custom.end_time || '06:59';
+        } else {
+          const rule = await this.weekCycleRule.findFirst({
+            where: { effective_date: { lte: locked.start_date } },
+            orderBy: { effective_date: 'desc' },
+          });
+          if (rule) {
+            startBoundTime = rule.start_time || '07:00';
+            endBoundTime = rule.end_time || '06:59';
+          }
+        }
+
+        const startBoundary = `${startStr}T${startBoundTime}:00`;
+        const endBoundary = `${endStr}T${endBoundTime}:59`;
 
         if (targetDateTimeStr >= startBoundary && targetDateTimeStr <= endBoundary) {
           return true;

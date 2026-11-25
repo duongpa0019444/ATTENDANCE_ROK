@@ -2,12 +2,14 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { ImportExcelDto } from './import-excel.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { WeekCycleService } from '../week-cycle/week-cycle.service';
 
 @Injectable()
 export class ShiftsService {
   constructor(
     private prisma: PrismaService,
     private auditLogsService: AuditLogsService,
+    private weekCycleService: WeekCycleService,
   ) {}
 
   async findAllShifts(weekStartDateStr?: string) {
@@ -840,20 +842,22 @@ export class ShiftsService {
       }
     }
 
+    const boundaries = await this.weekCycleService.getWeekBoundaries(week_start_date);
+    const cycleEndDate = new Date(`${boundaries.end_date}T00:00:00Z`);
+    const cycleStartStr = boundaries.start_date;
+    const cycleEndStr = boundaries.end_date;
+    const cycleStartTime = boundaries.start_time || '07:00';
+    const cycleEndTime = boundaries.end_time || '06:59';
+
     const txRes = await this.prisma.$transaction(async (tx) => {
       const uniqueWorkDates = Array.from(new Set(assignments.map(a => a.work_date))).map(d => new Date(d));
 
-      // 1. Fetch all existing assignments on imported dates and within the week cycle
-      const nextMondayDate = new Date(weekStartDate);
-      nextMondayDate.setDate(nextMondayDate.getDate() + 7);
-      const nextMondayStr = nextMondayDate.toISOString().split('T')[0];
-      const weekStartDateStr = week_start_date; // e.g. '2026-06-29'
-
+      // 1. Fetch all existing assignments on imported dates and within the dynamic week cycle
       const allDateAssignments = await tx.shiftAssignment.findMany({
         where: {
           OR: [
             { work_date: { in: uniqueWorkDates } },
-            { work_date: { gte: weekStartDate, lte: nextMondayDate } },
+            { work_date: { gte: weekStartDate, lte: cycleEndDate } },
           ],
         },
         include: {
@@ -866,12 +870,12 @@ export class ShiftsService {
         },
       });
 
-      // Filter to existing assignments within the current week's cycle bounds
+      // Filter to existing assignments within the current week's dynamic cycle bounds
       const existingWeekAssignments = allDateAssignments.filter(a => {
         const dateStr = a.work_date.toISOString().split('T')[0];
         const startTime = a.shift?.start_time || '00:00';
-        const isAfterStart = (dateStr > weekStartDateStr) || (dateStr === weekStartDateStr && startTime >= '07:00');
-        const isBeforeEnd = (dateStr < nextMondayStr) || (dateStr === nextMondayStr && startTime < '07:00');
+        const isAfterStart = (dateStr > cycleStartStr) || (dateStr === cycleStartStr && startTime >= cycleStartTime);
+        const isBeforeEnd = (dateStr < cycleEndStr) || (dateStr === cycleEndStr && startTime <= cycleEndTime);
         return isAfterStart && isBeforeEnd;
       });
 

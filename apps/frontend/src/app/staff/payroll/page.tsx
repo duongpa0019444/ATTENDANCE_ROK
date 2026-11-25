@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { apiFetch } from '@/lib/api';
+import { fetchWeekBoundary, WeekBoundary } from '@/lib/week-cycle';
 import {
   format,
   startOfMonth,
@@ -78,6 +79,24 @@ export default function StaffPayrollPage() {
 
   // Payroll states
   const [selectedWeekDate, setSelectedWeekDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [weekBoundary, setWeekBoundary] = useState<WeekBoundary | null>(null);
+
+  const syncWeekBoundary = useCallback(async (targetDate?: Date | string) => {
+    const boundary = await fetchWeekBoundary(targetDate);
+    if (boundary) {
+      setWeekBoundary(boundary);
+      setSelectedWeekDate(parseISO(boundary.start_date));
+    }
+  }, []);
+
+  useEffect(() => {
+    syncWeekBoundary();
+    const handleCycleUpdated = () => {
+      syncWeekBoundary();
+    };
+    window.addEventListener('week-cycle-updated', handleCycleUpdated);
+    return () => window.removeEventListener('week-cycle-updated', handleCycleUpdated);
+  }, [syncWeekBoundary]);
   const [payrollData, setPayrollData] = useState<PayrollRecord | null>(null);
   const [isPayrollLoading, setIsPayrollLoading] = useState(false);
 
@@ -85,7 +104,7 @@ export default function StaffPayrollPage() {
   const fetchMyPayroll = useCallback(async () => {
     setIsPayrollLoading(true);
     const startStr = format(selectedWeekDate, 'yyyy-MM-dd');
-    const endStr = format(addDays(selectedWeekDate, 7), 'yyyy-MM-dd');
+    const endStr = weekBoundary ? weekBoundary.end_date : format(addDays(selectedWeekDate, 7), 'yyyy-MM-dd');
     try {
       const res = await apiFetch(`${API_URL}/payroll/my-payroll?start_date=${startStr}&end_date=${endStr}`);
       if (res.ok) {
@@ -132,12 +151,19 @@ export default function StaffPayrollPage() {
               <DatePicker
                 selected={selectedWeekDate}
                 startDate={selectedWeekDate}
-                endDate={addDays(selectedWeekDate, 7)}
-                onChange={(date: Date | null) => {
-                  if (date) setSelectedWeekDate(startOfWeek(date, { weekStartsOn: 1 }));
+                endDate={weekBoundary ? parseISO(weekBoundary.end_date) : addDays(selectedWeekDate, 7)}
+                onChange={async (date: Date | null) => {
+                  if (date) {
+                    const boundary = await fetchWeekBoundary(date);
+                    if (boundary) {
+                      setWeekBoundary(boundary);
+                      setSelectedWeekDate(parseISO(boundary.start_date));
+                    } else {
+                      setSelectedWeekDate(startOfWeek(date, { weekStartsOn: 1 }));
+                    }
+                  }
                 }}
-                showWeekPicker
-                value={`Tuần: ${format(selectedWeekDate, 'dd/MM')} - ${format(addDays(selectedWeekDate, 7), 'dd/MM')}`}
+                value={`Tuần: ${format(selectedWeekDate, 'dd/MM')} - ${format(weekBoundary ? parseISO(weekBoundary.end_date) : addDays(selectedWeekDate, 7), 'dd/MM')}`}
                 formatWeekDay={formatWeekDayLabel}
                 portalId="payroll-week-datepicker-portal"
                 popperClassName="payroll-week-datepicker-popper"

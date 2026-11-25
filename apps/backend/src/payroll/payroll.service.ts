@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { WeekCycleService } from '../week-cycle/week-cycle.service';
 
 @Injectable()
 export class PayrollService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly weekCycleService: WeekCycleService,
   ) { }
 
 
@@ -199,8 +201,9 @@ export class PayrollService {
     const userPayrollMap = new Map<string, any>();
 
     const isRangeFilter = startDateStr !== endDateStr;
-    const startBoundary = `${startDateStr}T07:00:00`;
-    const endBoundary = `${endDateStr}T06:59:59`;
+    const rangeBoundaries = await this.weekCycleService.getWeekBoundaries(startDateStr);
+    const startBoundary = `${startDateStr}T${rangeBoundaries.start_time || '07:00'}:00`;
+    const endBoundary = `${endDateStr}T${rangeBoundaries.end_time || '06:59'}:59`;
 
     const salaryHistories = await this.prisma.serverSalaryHistory.findMany({
       where: {
@@ -231,12 +234,11 @@ export class PayrollService {
         const cellDate = new Date(assignment.work_date);
         cellDate.setHours(sh, sm, 0, 0);
 
-        const weekStart = new Date(shiftWeekStart);
-        weekStart.setHours(7, 0, 0, 0);
-
-        const weekEnd = new Date(shiftWeekStart);
-        weekEnd.setDate(weekEnd.getDate() + 7);
-        weekEnd.setHours(7, 0, 0, 0);
+        const boundaries = await this.weekCycleService.getWeekBoundaries(shiftWeekStart);
+        const weekStart = new Date(`${boundaries.start_date}T${boundaries.start_time}:00`);
+        const weekEnd = new Date(`${boundaries.end_date}T${boundaries.end_time}:00`);
+        // Add 1 minute to weekEnd to cover up to 06:59:59 inclusive
+        weekEnd.setMinutes(weekEnd.getMinutes() + 1);
 
         if (cellDate < weekStart || cellDate >= weekEnd) {
           continue;
@@ -1058,8 +1060,9 @@ export class PayrollService {
   async upsertWeeklyFund(body: { start_date: string; end_date: string; amount: number }, actorId?: string) {
     const start = this.parseDateOnly(body.start_date);
     const end = this.parseDateOnly(body.end_date);
+    const boundaries = await this.weekCycleService.getWeekBoundaries(start);
 
-    if (await this.prisma.isDateLocked(start, '07:00')) {
+    if (await this.prisma.isDateLocked(start, boundaries.start_time || '07:00')) {
       throw new BadRequestException('Tuần này đã chốt bảng lương. Không thể chỉnh sửa quỹ.');
     }
 
@@ -1114,7 +1117,8 @@ export class PayrollService {
   }
   async setCustomBaseSalary(body: { userId: string; startDate: string; customBaseSalary: number | null }, actorId?: string) {
     const start = this.parseDateOnly(body.startDate);
-    if (await this.prisma.isDateLocked(start, '07:00')) {
+    const boundaries = await this.weekCycleService.getWeekBoundaries(start);
+    if (await this.prisma.isDateLocked(start, boundaries.start_time || '07:00')) {
       throw new BadRequestException('Tuần này đã chốt bảng lương. Không thể chỉnh sửa đơn giá.');
     }
 

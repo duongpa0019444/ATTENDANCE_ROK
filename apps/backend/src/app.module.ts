@@ -15,6 +15,7 @@ import { AuthModule } from './auth/auth.module';
 import { ServersModule } from './servers/servers.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { WeekCycleModule } from './week-cycle/week-cycle.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
     ServersModule,
     PayrollModule,
     AuditLogsModule,
+    WeekCycleModule,
   ],
   controllers: [AppController],
   providers: [AppService],

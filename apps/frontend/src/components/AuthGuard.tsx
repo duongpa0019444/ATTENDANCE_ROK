@@ -1,7 +1,8 @@
 'use client';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Menu, X, Sun, Moon } from 'lucide-react';
+import { Menu, X, Sun, Moon, Settings } from 'lucide-react';
+import SystemSettingsModal from '@/components/SystemSettingsModal';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -11,6 +12,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [userRole, setUserRole] = useState<string>('');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
@@ -174,6 +176,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
         {/* Desktop actions */}
         <div className="hidden md:flex items-center gap-4">
+          {(userRole === 'ADMIN' || userRole === 'MANAGER') && (
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-1.5 text-slate-400 hover:text-white border border-slate-800 bg-slate-950/40 hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer"
+              title="Cài đặt hệ thống (Chu kỳ tuần & Telegram)"
+            >
+              <Settings className="w-4 h-4 text-cyan-400" />
+            </button>
+          )}
           <button
             onClick={toggleTheme}
             className="p-1.5 text-slate-400 hover:text-white border border-slate-800 bg-slate-950/40 hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer"
@@ -194,6 +205,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
         {/* Mobile menu button */}
         <div className="flex md:hidden items-center gap-2">
+          {(userRole === 'ADMIN' || userRole === 'MANAGER') && (
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-1.5 text-slate-400 hover:text-white border border-slate-800 bg-slate-950/40 hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer"
+              title="Cài đặt hệ thống"
+            >
+              <Settings className="w-4 h-4 text-cyan-400" />
+            </button>
+          )}
           <button
             onClick={toggleTheme}
             className="p-1.5 text-slate-400 hover:text-white border border-slate-800 bg-slate-950/40 hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer"
@@ -328,6 +348,18 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       </div>
 
       {children}
+
+      {/* Global System Settings Modal for Admin & Manager */}
+      {(userRole === 'ADMIN' || userRole === 'MANAGER') && (
+        <SystemSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          onWeekCycleUpdated={() => {
+            // Trigger any custom event if needed
+            window.dispatchEvent(new CustomEvent('week-cycle-updated'));
+          }}
+        />
+      )}
     </>
   ) : null;
 }

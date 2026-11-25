@@ -16,6 +16,7 @@ import { vi } from 'date-fns/locale';
 import { Calendar, Server as ServerIcon, Clock, Users, Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, ShieldAlert, X, Maximize2, Minimize2, Bell, History } from 'lucide-react';
 import PageHistoryDrawer from '@/components/PageHistoryDrawer';
 import { toast } from '@/components/ui/toast';
+import { fetchWeekBoundary, fetchAdjacentWeekBoundary, getDayShortName, WeekBoundary } from '@/lib/week-cycle';
 
 registerLocale('vi', vi);
 setDefaultLocale('vi');
@@ -106,8 +107,28 @@ export default function ShiftsPage() {
   const [isWeekLocked, setIsWeekLocked] = useState<boolean>(false);
   const [isCheckingWeekLock, setIsCheckingWeekLock] = useState<boolean>(false);
 
-  // Selected Week Start Date (defaults to Monday of current week)
+  // Selected Week Start Date & Dynamic Week Boundary
   const [selectedDate, setSelectedDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [weekBoundary, setWeekBoundary] = useState<WeekBoundary | null>(null);
+  const [newShiftWeekEnd, setNewShiftWeekEnd] = useState<Date | null>(null);
+
+  const syncSelectedWeekBoundary = useCallback(async (targetDate?: Date | string) => {
+    const boundary = await fetchWeekBoundary(targetDate);
+    if (boundary) {
+      setWeekBoundary(boundary);
+      setSelectedDate(parseISO(boundary.start_date));
+      setNewShiftWeekEnd(parseISO(boundary.end_date));
+    }
+  }, []);
+
+  useEffect(() => {
+    syncSelectedWeekBoundary();
+    const handleCycleUpdated = () => {
+      syncSelectedWeekBoundary();
+    };
+    window.addEventListener('week-cycle-updated', handleCycleUpdated);
+    return () => window.removeEventListener('week-cycle-updated', handleCycleUpdated);
+  }, [syncSelectedWeekBoundary]);
 
   // System Settings state
   const [systemSettings, setSystemSettings] = useState<any>(null);
@@ -368,20 +389,11 @@ export default function ShiftsPage() {
           return;
         }
 
-        // Always use the Monday of the currently selected week on the UI
+        // Use dynamic week cycle boundaries for Excel import validation
         const weekStartDateStr = format(selectedDate, 'yyyy-MM-dd');
-        
-        // 2. Kiểm tra lệch tuần giữa Excel và tuần đang chọn trên hệ thống
-        // 2. Lọc chỉ giữ các cột ngày thuộc tuần đang chọn (Thứ 2 → Chủ nhật)
-        const weekStart = selectedDate; // Monday
-        const weekEnd = new Date(selectedDate);
-        weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
-        const weekEndStr = format(weekEnd, 'yyyy-MM-dd');
-
-        // Calculate next Monday to define the cycle bounds
-        const nextMonday = new Date(selectedDate);
-        nextMonday.setDate(nextMonday.getDate() + 7);
-        const nextMondayStr = format(nextMonday, 'yyyy-MM-dd');
+        const cycleEndStr = weekBoundary ? weekBoundary.end_date : format(addDays(selectedDate, 7), 'yyyy-MM-dd');
+        const cycleStartTime = weekBoundary?.start_time || '07:00';
+        const cycleEndTime = weekBoundary?.end_time || '06:59';
 
         const parsedAssignments: Array<{
           serverName: string;
@@ -426,9 +438,9 @@ export default function ShiftsPage() {
                 .map(n => n.replace(/\([^)]*\)/g, '').trim())
                 .filter(Boolean);
 
-              // Cycle check: from 07:00 Monday to 06:59 next Monday
-              const isAfterStart = (dateStr > weekStartDateStr) || (dateStr === weekStartDateStr && timeCell >= '07:00');
-              const isBeforeEnd = (dateStr < nextMondayStr) || (dateStr === nextMondayStr && timeCell < '07:00');
+              // Dynamic cycle check
+              const isAfterStart = (dateStr > weekStartDateStr) || (dateStr === weekStartDateStr && timeCell >= cycleStartTime);
+              const isBeforeEnd = (dateStr < cycleEndStr) || (dateStr === cycleEndStr && timeCell <= cycleEndTime);
 
               if (isAfterStart && isBeforeEnd) {
                 nameList.forEach(n => uniqueNamesInExcel.add(n));
@@ -447,7 +459,7 @@ export default function ShiftsPage() {
         }
 
         if (skippedDateTimes.size > 0) {
-          alert(`Lưu ý: Trong file Excel có lịch không thuộc chu kỳ tuần đang chọn (Từ 07:00 Thứ 2 đến 06:59 Thứ 2 tuần sau).\n\nCác ca bị bỏ qua: ${Array.from(skippedDateTimes).join(', ')}\n\nChỉ nhập các ca thuộc chu kỳ tuần hiện tại.`);
+          alert(`Lưu ý: Trong file Excel có lịch không thuộc chu kỳ tuần đang chọn (${cycleStartTime} ${format(selectedDate, 'dd/MM')} → ${cycleEndTime} ${format(parseISO(cycleEndStr), 'dd/MM')}).\n\nCác ca bị bỏ qua: ${Array.from(skippedDateTimes).join(', ')}\n\nChỉ nhập các ca thuộc chu kỳ tuần hiện tại.`);
         }
 
         if (parsedAssignments.length === 0) {
@@ -634,30 +646,30 @@ export default function ShiftsPage() {
     };
   }, [isFullscreen]);
 
-    // Compute 8 days: from Monday of selected week to Monday of next week
-  const weekDays = Array.from({ length: 8 }).map((_, i) => addDays(selectedDate, i));
-  
-    // Helper: check if a shift+date combo belongs to the current week (7AM Mon -> 6:59AM next Mon)
+  // Compute dynamic week days based on configured WeekCycle
+  const totalDaysCount = weekBoundary ? weekBoundary.total_days : 7;
+  const weekEndDate = weekBoundary ? parseISO(weekBoundary.end_date) : addDays(selectedDate, 7);
+  const weekDays = Array.from({ length: totalDaysCount + 1 }).map((_, i) => addDays(selectedDate, i));
+
+  // Helper: check if a shift+date combo belongs to the current dynamic week cycle
   const isShiftInCurrentWeek = useCallback((shift: any, day: Date): boolean => {
-    const weekStartMon = selectedDate;
-    const nextWeekMon = addDays(weekStartMon, 7);
-    
-    // Get shift start time in hours and minutes
+    const startTimeStr = weekBoundary?.start_time || '07:00';
+    const endTimeStr = weekBoundary?.end_time || '06:59';
+    const [bsh, bsm] = startTimeStr.split(':').map(Number);
+    const [beh, bem] = endTimeStr.split(':').map(Number);
+
     const [sh, sm] = (shift.start_time || '00:00').split(':').map(Number);
-    
-    // The cell's "effective start" = day at shift start time
     const cellDate = new Date(day);
     cellDate.setHours(sh, sm, 0, 0);
-    
-    // Week boundaries: 7:00 AM
-    const weekStart = new Date(weekStartMon);
-    weekStart.setHours(7, 0, 0, 0);
-    
-    const weekEnd = new Date(nextWeekMon);
-    weekEnd.setHours(7, 0, 0, 0);
-    
-    return cellDate >= weekStart && cellDate < weekEnd;
-  }, [selectedDate]);
+
+    const weekStart = new Date(selectedDate);
+    weekStart.setHours(bsh, bsm, 0, 0);
+
+    const weekEnd = new Date(weekEndDate);
+    weekEnd.setHours(beh, bem, 59, 999);
+
+    return cellDate >= weekStart && cellDate <= weekEnd;
+  }, [selectedDate, weekEndDate, weekBoundary]);
 
   const getDatabaseWorkDate = useCallback((shift: any, day: Date): Date => {
     return day;
@@ -695,7 +707,7 @@ export default function ShiftsPage() {
   const fetchData = useCallback(async () => {
     try {
       const startStr = format(selectedDate, 'yyyy-MM-dd');
-      const endStr = format(addDays(selectedDate, 7), 'yyyy-MM-dd');
+      const endStr = weekBoundary ? weekBoundary.end_date : format(addDays(selectedDate, 7), 'yyyy-MM-dd');
 
       // Check lock status
       setIsCheckingWeekLock(true);
@@ -968,9 +980,10 @@ export default function ShiftsPage() {
 
   const handleCloneWeek = async () => {
     try {
-      const prevWeekDate = addDays(selectedDate, -7);
-      const fromWeekStr = format(prevWeekDate, 'yyyy-MM-dd');
       const toWeekStr = format(selectedDate, 'yyyy-MM-dd');
+      const endStr = weekBoundary ? weekBoundary.end_date : format(addDays(selectedDate, 7), 'yyyy-MM-dd');
+      const prevBoundary = await fetchAdjacentWeekBoundary({ start_date: toWeekStr, end_date: endStr }, -1);
+      const fromWeekStr = prevBoundary ? prevBoundary.start_date : format(addDays(selectedDate, -7), 'yyyy-MM-dd');
 
       const res = await apiFetch(`${API_URL}/shifts/clone-week`, {
         method: 'POST',
@@ -1191,12 +1204,19 @@ export default function ShiftsPage() {
               <DatePicker
                 selected={selectedDate}
                 startDate={selectedDate}
-                endDate={addDays(selectedDate, 7)}
-                onChange={(date: Date | null) => {
-                  if (date) setSelectedDate(startOfWeek(date, { weekStartsOn: 1 }));
+                endDate={weekEndDate}
+                onChange={async (date: Date | null) => {
+                  if (date) {
+                    const boundary = await fetchWeekBoundary(date);
+                    if (boundary) {
+                      setWeekBoundary(boundary);
+                      setSelectedDate(parseISO(boundary.start_date));
+                    } else {
+                      setSelectedDate(startOfWeek(date, { weekStartsOn: 1 }));
+                    }
+                  }
                 }}
-                showWeekPicker
-                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(addDays(selectedDate, 7), 'dd/MM')}`}
+                value={`Tuần: ${format(selectedDate, 'dd/MM')} - ${format(weekEndDate, 'dd/MM')}`}
                 formatWeekDay={formatWeekDayLabel}
                 portalId="shift-week-datepicker-portal"
                 popperClassName="shift-week-datepicker-popper"
@@ -1206,7 +1226,7 @@ export default function ShiftsPage() {
             </div>
 
             <div className="text-xs text-slate-500 font-mono">
-              Thứ 2 ({format(weekDays[0], 'dd/MM')}) - Thứ 2 sau ({format(weekDays[7], 'dd/MM')}) (7h sáng → 6h59 sáng hôm sau)
+              {getDayShortName(weekDays[0])} ({format(weekDays[0], 'dd/MM')}) - {getDayShortName(weekDays[weekDays.length - 1])} ({format(weekDays[weekDays.length - 1], 'dd/MM')}) ({weekBoundary?.start_time || '07:00'} → {weekBoundary?.end_time || '06:59'} • {totalDaysCount} ngày)
             </div>
           </div>
           </div>
@@ -1623,14 +1643,22 @@ export default function ShiftsPage() {
                   <label className="text-xs text-slate-400 font-medium font-mono">CHỌN TUẦN CHO CA LÀM (*)</label>
                   <DatePicker
                     selected={newShift.week_start_date}
-                    onChange={(date: Date | null) => {
+                    startDate={newShift.week_start_date || undefined}
+                    endDate={newShiftWeekEnd || (newShift.week_start_date ? addDays(newShift.week_start_date, totalDaysCount) : undefined)}
+                    onChange={async (date: Date | null) => {
                       if (date) {
-                        const monday = startOfWeek(date, { weekStartsOn: 1 });
-                        setNewShift({ ...newShift, week_start_date: monday });
+                        const boundary = await fetchWeekBoundary(date);
+                        if (boundary) {
+                          setNewShift({ ...newShift, week_start_date: parseISO(boundary.start_date) });
+                          setNewShiftWeekEnd(parseISO(boundary.end_date));
+                        } else {
+                          const monday = startOfWeek(date, { weekStartsOn: 1 });
+                          setNewShift({ ...newShift, week_start_date: monday });
+                          setNewShiftWeekEnd(addDays(monday, 7));
+                        }
                       }
                     }}
-                    showWeekPicker
-                    value={newShift.week_start_date ? `Tuần: ${format(newShift.week_start_date, 'dd/MM')} - ${format(addDays(newShift.week_start_date, 7), 'dd/MM')}` : ''}
+                    value={newShift.week_start_date ? `Tuần: ${format(newShift.week_start_date, 'dd/MM')} - ${format(newShiftWeekEnd || addDays(newShift.week_start_date, totalDaysCount), 'dd/MM')}` : ''}
                     formatWeekDay={formatWeekDayLabel}
                     popperClassName="z-50"
                     className="flex h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
@@ -1965,7 +1993,7 @@ export default function ShiftsPage() {
                 <Calendar className="w-5.5 h-5.5 text-cyan-400" /> Khởi Tạo Tuần Mới
               </DialogTitle>
               <DialogDescription className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-                Tuần từ <strong className="text-slate-200">{dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''}</strong> đến <strong className="text-slate-200">{dialogWeekStr ? format(addDays(parseISO(dialogWeekStr), 7), 'dd/MM/yyyy') : ''}</strong> chưa được khởi tạo ca làm việc nào.
+                Tuần từ <strong className="text-slate-200">{dialogWeekStr ? format(parseISO(dialogWeekStr), 'dd/MM/yyyy') : ''}</strong> đến <strong className="text-slate-200">{format(weekEndDate, 'dd/MM/yyyy')}</strong> chưa được khởi tạo ca làm việc nào.
               </DialogDescription>
             </DialogHeader>
 
